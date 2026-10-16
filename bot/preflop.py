@@ -3,7 +3,8 @@ from . import config, tables, equity, tournament, opponents, priors  # noqa: F40
 from .actions import FOLD, CHECK, CALL, ALL_IN, RAISE_TO
 from .cards import hand_class
 
-OPEN_BY_BEHIND = {0: 0.50, 1: 0.45, 2: 0.32, 3: 0.25, 4: 0.20, 5: 0.16}
+OPEN_BY_BEHIND = {0: 0.70, 1: 0.62, 2: 0.48, 3: 0.38, 4: 0.30, 5: 0.24}  # sim: wider > v1.1.1 by +0.12
+CALL_ICM_MARGIN = 0.25   # extra ICM points to call/re-shove in big spots (sim: +0.16, 2nd place 13->17%)
 RESTEAL_MAX_PCT = 0.30  # live logs: trash re-shoves (73s, T3o, J2o) over opens got called by better
 
 
@@ -145,7 +146,7 @@ def _facing_raise(v, ctx, cls, info):
         ok = eq >= required + margin
         if ctx.icm and agg is not None:
             f, _, w, l = tournament.icm_allin(v, v.idx_of(agg), call_eff, 0, v.idx_of(agg))
-            ok = eq * w + (1 - eq) * l > f + {-1: 0.01, 0: 0.0, 1: -0.01}[ctx.var]
+            ok = eq * w + (1 - eq) * l > f + CALL_ICM_MARGIN + {-1: 0.01, 0: 0.0, 1: -0.01}[ctx.var]
             info['icm'] = [round(f, 3), round(w, 3), round(l, 3)]
         if ok:
             if agg_allin or call >= S:
