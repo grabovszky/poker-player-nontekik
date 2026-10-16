@@ -1,6 +1,8 @@
 class Player:
     VERSION = "nontekik_v0.1.0"
 
+    RAISE_MULTIPLIER = 10
+
     def betRequest(self, game_state):
         in_action = game_state['in_action']
         player = game_state['players'][in_action]
@@ -16,7 +18,7 @@ class Player:
             return 0
 
         def minimum_raise():
-            return call() + game_state['minimum_raise']
+            return call() + game_state['minimum_raise'] * RAISE_MULTIPLIER
 
         # calculate the rank of the hand with Chen
         def rank():
@@ -79,15 +81,15 @@ class Player:
             def to_num(card):
                 r = card['rank']
                 if r == 'A':
-                    return 14
+                    return 14 * RAISE_MULTIPLIER
                 elif r == 'K':
-                    return 13
+                    return 13 * RAISE_MULTIPLIER
                 elif r == 'Q':
-                    return 12
+                    return 12 * RAISE_MULTIPLIER
                 elif r == 'J':
-                    return 11
+                    return 11 * RAISE_MULTIPLIER
                 elif r == 'T':
-                    return 10
+                    return 10 * RAISE_MULTIPLIER
                 else:
                     try:
                         return int(r)
