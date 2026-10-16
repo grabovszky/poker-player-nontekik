@@ -1,0 +1,423 @@
+"""In-process NLHE sit'n'go simulator in the Lean Poker game_state shape.
+
+  python tools/sim.py --a current --b baseline --n 2000
+  --a/--b: current (working tree) | baseline (= git:HEAD) | git:<ref> | <BuiltinBot>
+Paired comparison: game i uses the same lineup, seats and deck seed for A and B.
+"""
+import argparse
+import importlib.util
+import math
+import os
+import random
+import subprocess
+import sys
+import time
+from multiprocessing import Pool
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+_spec = importlib.util.spec_from_file_location('sim_eval', os.path.join(ROOT, 'bot', 'evaluator.py'))
+EV = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(EV)
+
+RANK_STR = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
+SUIT_STR = ['clubs', 'diamonds', 'hearts', 'spades']
+OUR_NAME = 'nontekik'
+
+
+def card_json(c):
+    return {'rank': RANK_STR[c >> 2], 'suit': SUIT_STR[c & 3]}
+
+
+def card_int(d):
+    r = str(d['rank'])
+    return (RANK_STR.index('10' if r == 'T' else r)) * 4 + SUIT_STR.index(d['suit'])
+
+
+# ---------------------------------------------------------------- built-in opponents
+
+def _chen(hole):
+    c = sorted([card_int(x) for x in hole], reverse=True)
+    hi, lo = c[0] >> 2, c[1] >> 2
+    pts = {12: 10, 11: 8, 10: 7, 9: 6}
+    s = pts.get(hi, (hi + 2) / 2.0)
+    if hi == lo:
+        return max(5, math.ceil(s * 2))
+    if c[0] & 3 == c[1] & 3:
+        s += 2
+    gap = hi - lo - 1
+    s -= (0, 1, 2, 4)[gap] if gap < 4 else 5
+    if gap <= 1 and hi < 10:
+        s += 1
+    return math.ceil(s)
+
+
+def _me(s):
+    return s['players'][s['in_action']]
+
+
+def _call(s):
+    return max(0, s['current_buy_in'] - _me(s)['bet'])
+
+
+def _made(s):
+    cards = [card_int(c) for c in _me(s)['hole_cards'] + s['community_cards']]
+    return EV.evaluate(cards) >> 20 if len(cards) >= 5 else 0
+
+
+def b_folder(s):
+    return 0
+
+
+def b_allin(s):
+    return _me(s)['stack']
+
+
+def b_station(s):
+    return _call(s)
+
+
+def b_chenpusher(s):
+    if s['community_cards']:
+        return 0
+    bb = 2 * s['small_blind']
+    thr = 7 if _me(s)['stack'] < 15 * bb else 9
+    return _me(s)['stack'] if _chen(_me(s)['hole_cards']) >= thr else 0
+
+
+def b_tightpassive(s):
+    if not s['community_cards']:
+        return _call(s) if _chen(_me(s)['hole_cards']) >= 9 else 0
+    return _call(s) if _made(s) >= 1 else 0
+
+
+def b_thresholdcaller(s):
+    if not s['community_cards']:
+        return _call(s) if _chen(_me(s)['hole_cards']) >= 6 else 0
+    return _call(s) if _made(s) >= 1 else 0
+
+
+def b_randomaggro(s):
+    r = random.Random('%s|%s|%s|%s' % (s['game_id'], s['round'], s['bet_index'], _me(s)['name'])).random()
+    if r < 0.3:
+        return 0
+    if r < 0.7:
+        return _call(s)
+    return _call(s) + s['minimum_raise'] + int(r * s['pot'])
+
+
+BUILTINS = {'Folder': b_folder, 'AllIn': b_allin, 'CallingStation': b_station, 'ChenPusher': b_chenpusher,
+            'TightPassive': b_tightpassive, 'RandomAggro': b_randomaggro, 'ThresholdCaller': b_thresholdcaller}
+
+
+# ---------------------------------------------------------------- engine
+
+class Game(object):
+    def __init__(self, gid, seats, rng, args, clock):
+        self.gid, self.rng, self.args, self.clock = gid, rng, args, clock
+        self.seats = seats  # list of (name, bet_fn, showdown_fn)
+        self.players = [{'id': i, 'name': nm, 'status': 'active', 'version': '1', 'stack': args.chips,
+                         'bet': 0, 'hole_cards': []} for i, (nm, _, _) in enumerate(seats)]
+        self.dealer = rng.randrange(len(seats))
+        self.busted = []  # names, first busted first
+        self.errors = 0
+        self.lat = []
+
+    def state(self, i, reveal=False):
+        ps = []
+        for j, p in enumerate(self.players):
+            q = dict(p)
+            q['hole_cards'] = [card_json(c) for c in p['hole_cards']] if (j == i or (reveal and p['status'] == 'active')) else []
+            ps.append(q)
+        return {'tournament_id': 'sim', 'game_id': self.gid, 'round': self.round, 'bet_index': self.bet_index,
+                'small_blind': self.sb, 'current_buy_in': self.cbi, 'pot': sum(p['bet'] for p in self.players),
+                'minimum_raise': self.min_raise, 'dealer': self.dealer, 'orbits': self.round // max(1, len(self.alive)),
+                'in_action': i, 'players': ps, 'community_cards': [card_json(c) for c in self.board]}
+
+    def ask(self, i):
+        name, fn, _ = self.seats[i]
+        t = time.perf_counter()
+        try:
+            a = fn(self.state(i))
+        except Exception:
+            a = None
+        if name == OUR_NAME:
+            self.lat.append((time.perf_counter() - t) * 1000)
+        if not isinstance(a, int) or a < 0:
+            if name == OUR_NAME:
+                self.errors += 1
+            return 0
+        return a
+
+    def put(self, p, amt):
+        amt = min(amt, p['stack'])
+        p['stack'] -= amt
+        p['bet'] += amt
+
+    def run(self):
+        sbs = [int(x) for x in self.args.blinds.split(',')]
+        for self.round in range(self.args.max_hands):
+            self.alive = [i for i, p in enumerate(self.players) if p['stack'] > 0]
+            if len(self.alive) <= 1:
+                break
+            self.clock[0] = self.clock_base + self.round * self.args.hand_sec
+            self.sb = sbs[min(self.round // self.args.blind_hands, len(sbs) - 1)]
+            before = dict((i, self.players[i]['stack']) for i in self.alive)
+            self.hand()
+            assert sum(p['stack'] for p in self.players) == self.args.chips * len(self.players), 'chips leaked'
+            gone = [i for i in self.alive if self.players[i]['stack'] == 0]
+            for i in sorted(gone, key=lambda k: before[k]):
+                self.busted.append(self.players[i]['name'])
+            n = len(self.players)
+            for k in range(1, n + 1):
+                d = (self.dealer + k) % n
+                if self.players[d]['stack'] > 0:
+                    self.dealer = d
+                    break
+        live = sorted([p for p in self.players if p['stack'] > 0], key=lambda p: -p['stack'])
+        return [p['name'] for p in live] + self.busted[::-1]
+
+    def hand(self):
+        n = len(self.players)
+        for p in self.players:
+            p['bet'] = 0
+            p['hole_cards'] = []
+            p['status'] = 'active' if p['stack'] > 0 else 'out'
+        if self.players[self.dealer]['stack'] == 0:
+            self.dealer = self.alive[0]
+        a = [(self.dealer + k) % n for k in range(n) if self.players[(self.dealer + k) % n]['stack'] > 0]
+        deck = list(range(52))
+        self.rng.shuffle(deck)
+        self.board = []
+        self.bet_index = 0
+        bb = 2 * self.sb
+        sbi, bbi = (a[0], a[1]) if len(a) == 2 else (a[1], a[2])
+        self.put(self.players[sbi], self.sb)
+        self.put(self.players[bbi], bb)
+        for i in a:
+            self.players[i]['hole_cards'] = [deck.pop(), deck.pop()]
+        pre = [a[0], a[1]] if len(a) == 2 else a[3:] + a[:3]
+        post = a[1:] + a[:1]
+        for street, order in ((0, pre), (3, post), (4, post), (5, post)):
+            if street:
+                while len(self.board) < street:
+                    self.board.append(deck.pop())
+            in_hand = [i for i in a if self.players[i]['status'] == 'active']
+            if len(in_hand) <= 1:
+                break
+            can_act = [i for i in in_hand if self.players[i]['stack'] > 0]
+            top = max(self.players[i]['bet'] for i in in_hand)
+            if len(can_act) == 0 or (len(can_act) == 1 and self.players[can_act[0]]['bet'] >= top):
+                continue
+            self.betting(order, bb)
+        while len(self.board) < 5 and sum(1 for i in a if self.players[i]['status'] == 'active') > 1:
+            self.board.append(deck.pop())
+        self.payout(a)
+
+    def betting(self, order, bb):
+        self.cbi = max(p['bet'] for p in self.players)
+        self.min_raise = bb
+        acted = set()
+        k = 0
+        while True:
+            act = [i for i in order if self.players[i]['status'] == 'active']
+            if len(act) <= 1:
+                return
+            todo = [i for i in act if self.players[i]['stack'] > 0 and (i not in acted or self.players[i]['bet'] < self.cbi)]
+            if not todo:
+                return
+            i = order[k % len(order)]
+            k += 1
+            if i not in todo:
+                continue
+            p = self.players[i]
+            call = self.cbi - p['bet']
+            amt = min(self.ask(i), p['stack'])
+            self.bet_index += 1
+            acted.add(i)
+            if amt == p['stack'] and amt > 0:
+                self.put(p, amt)
+                if p['bet'] > self.cbi:
+                    self.min_raise = max(self.min_raise, p['bet'] - self.cbi)
+                    self.cbi = p['bet']
+                    acted = set([i])
+            elif amt < call:
+                p['status'] = 'folded'
+            elif amt < call + self.min_raise:
+                self.put(p, call)
+            else:
+                self.put(p, amt)
+                self.min_raise = amt - call
+                self.cbi = p['bet']
+                acted = set([i])
+
+    def payout(self, a):
+        live = [i for i in a if self.players[i]['status'] == 'active']
+        showdown = len(live) > 1
+        vals = dict((i, EV.evaluate(self.players[i]['hole_cards'] + self.board)) for i in live) if showdown else {}
+        bets = [p['bet'] for p in self.players]
+        levels = sorted(set(b for b in bets if b > 0))
+        prev = 0
+        for lv in levels:
+            layer = sum(min(b, lv) - min(b, prev) for b in bets)
+            elig = [i for i in live if bets[i] >= lv] or [i for i in range(len(bets)) if bets[i] >= lv]
+            if showdown and len(elig) > 1:
+                best = max(vals.get(i, -1) for i in elig)
+                win = [i for i in elig if vals.get(i, -1) == best]
+            else:
+                win = elig[:1]
+            share, odd = divmod(layer, len(win))
+            for j, i in enumerate(win):
+                self.players[i]['stack'] += share + (1 if j < odd else 0)
+            prev = lv
+        if showdown:
+            for i, (_, _, sd) in enumerate(self.seats):
+                if sd and self.players[i]['status'] != 'out':
+                    try:
+                        sd(self.state(i, reveal=True))
+                    except Exception:
+                        pass
+        for p in self.players:
+            p['bet'] = 0
+
+
+# ---------------------------------------------------------------- candidates & workers
+
+def snapshot(ref):
+    sha = subprocess.check_output(['git', '-C', ROOT, 'rev-parse', '--short', ref]).decode().strip()
+    d = os.path.join(ROOT, '.sim_cache', sha)
+    if not os.path.isdir(d):
+        os.makedirs(d)
+        arc = subprocess.check_output(['git', '-C', ROOT, 'archive', sha, 'bot', 'player.py'])
+        subprocess.run(['tar', '-x', '-C', d], input=arc, check=True)
+    return d
+
+
+def resolve(spec):
+    if spec in BUILTINS:
+        return spec
+    if spec == 'current':
+        return ROOT
+    if spec == 'baseline':
+        spec = 'git:HEAD'
+    if spec.startswith('git:'):
+        return snapshot(spec[4:])
+    raise SystemExit('unknown candidate %r' % spec)
+
+
+W = {}
+
+
+def init(cand, args):
+    W['args'] = args
+    W['clock'] = [0.0]
+    if cand in BUILTINS:
+        W['ours'] = (BUILTINS[cand], None)
+        return
+    sys.path.insert(0, cand)
+    import player
+    try:
+        from bot import config, tournament
+        config.decision_budget_ms = args.budget_ms
+        config.mc_max_iters = args.iters
+        tournament.now = lambda: W['clock'][0]
+    except Exception:
+        pass
+    pl = player.Player()
+    W['ours'] = (pl.betRequest, pl.showdown)
+
+
+def lineup(i, args):
+    rng = random.Random(args.seed * 100003 + i)
+    pool = args.opps.split(',')
+    k = rng.randint(args.min_players, args.max_players) - 1
+    names = []
+    for _ in range(k):
+        b = rng.choice(pool)
+        nm = b
+        j = 2
+        while nm in names:
+            nm = '%s%d' % (b, j)
+            j += 1
+        names.append(nm)
+    pos = rng.randrange(k + 1)
+    names.insert(pos, OUR_NAME)
+    return names, rng.randrange(1 << 30)
+
+
+def play(i):
+    args = W['args']
+    names, deck_seed = lineup(i, args)
+    seats = []
+    for nm in names:
+        if nm == OUR_NAME:
+            seats.append((nm,) + W['ours'])
+        else:
+            seats.append((nm, BUILTINS[nm.rstrip('0123456789')], None))
+    g = Game('sim-%d' % i, seats, random.Random(deck_seed), args, W['clock'])
+    g.clock_base = i * 100000.0
+    places = g.run()
+    place = places.index(OUR_NAME) + 1
+    pts = 5 if place == 1 else 3 if place == 2 else 0
+    return i, pts, place, len(names), g.errors, g.lat
+
+
+def run(cand, args):
+    out = {}
+    lat = []
+    errors = 0
+    with Pool(args.procs, initializer=init, initargs=(cand, args)) as pool:
+        for i, pts, place, n, err, l in pool.imap_unordered(play, range(args.n), chunksize=8):
+            out[i] = (pts, place, n)
+            errors += err
+            lat.extend(l)
+    return out, lat, errors
+
+
+def summary(label, res, lat, errors):
+    pts = [r[0] for r in res.values()]
+    n = len(pts)
+    m = sum(pts) / float(n)
+    sd = math.sqrt(sum((x - m) ** 2 for x in pts) / max(1, n - 1))
+    lat.sort()
+    p = lambda q: lat[min(len(lat) - 1, int(q * len(lat)))] if lat else 0.0
+    print('%-12s pts/game %.3f ±%.3f  win %.1f%%  2nd %.1f%%  errors %d  ms p50 %.1f p99 %.1f' % (
+        label, m, 1.96 * sd / math.sqrt(n), 100.0 * pts.count(5) / n, 100.0 * pts.count(3) / n, errors, p(0.5), p(0.99)))
+    return m
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--a', default='current')
+    ap.add_argument('--b', default='baseline')
+    ap.add_argument('--n', type=int, default=1000)
+    ap.add_argument('--seed', type=int, default=1)
+    ap.add_argument('--procs', type=int, default=max(1, (os.cpu_count() or 2) - 2))
+    ap.add_argument('--opps', default=','.join(sorted(BUILTINS)))
+    ap.add_argument('--min-players', type=int, default=3)
+    ap.add_argument('--max-players', type=int, default=6)
+    ap.add_argument('--chips', type=int, default=1000)
+    ap.add_argument('--blinds', default='5,10,15,20,25,30,40,50,60,80,100,150,200,300,400,500',
+                    help='small blind schedule (uncalibrated: fit to real logs)')
+    ap.add_argument('--blind-hands', type=int, default=10, help='hands per blind level')
+    ap.add_argument('--max-hands', type=int, default=200, help='3-minute cap as a hand limit')
+    ap.add_argument('--hand-sec', type=float, default=0.9, help='simulated seconds per hand (cutoff mode)')
+    ap.add_argument('--budget-ms', type=float, default=3)
+    ap.add_argument('--iters', type=int, default=400)
+    args = ap.parse_args()
+
+    t = time.time()
+    ra, la, ea = run(resolve(args.a), args)
+    ma = summary('A ' + args.a, ra, la, ea)
+    if args.b and args.b != 'none':
+        rb, lb, eb = run(resolve(args.b), args)
+        mb = summary('B ' + args.b, rb, lb, eb)
+        d = [ra[i][0] - rb[i][0] for i in ra]
+        md = sum(d) / float(len(d))
+        sd = math.sqrt(sum((x - md) ** 2 for x in d) / max(1, len(d) - 1))
+        print('A-B paired diff %.3f ±%.3f pts/game (95%% CI)%s' % (
+            md, 1.96 * sd / math.sqrt(len(d)), '  -> A better' if md - 1.96 * sd / math.sqrt(len(d)) > 0 else ''))
+    print('%.0fs' % (time.time() - t))
+
+
+if __name__ == '__main__':
+    main()
