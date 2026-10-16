@@ -11,6 +11,7 @@ from .exploits import k
 KEEP = {1: (None, 0.8, 1.0, 1.0, 1.0), 2: (None, 0.4, 0.5, 1.0, 1.0), 3: (None, 0.25, 0.2, 0.6, 1.0)}
 
 V3 = 0.45
+R2 = True
 PROXY = {0: 0.25, 1: 0.50, 2: 0.68, 3: 0.78, 4: 0.85, 5: 0.88, 6: 0.93, 7: 0.97, 8: 0.99}
 
 
@@ -67,6 +68,8 @@ def aggression(v, p, lvl):
 def villain_combos(ctx, v, p, lvl):
     combos = tables.range_combos(_range_pct(ctx, p))
     a = aggression(v, p, lvl)
+    if k(p) == 75655 and v.call:
+        a = 0 if v.call < 0.8 * max(v.pot - v.call, 1) else 3
     if a == 0:
         return combos, a
     dead = set(v.hole + v.board)
@@ -143,6 +146,11 @@ def decide(v, ctx):
             return RAISE_TO(v.my_bet + size), 'post_raise', info
         if eq >= required + margin:
             return CALL, 'post_call', info
+        if R2 and n == 1 and v.opps_live and k(agg) == 75655 and call < 0.8 * max(pot - call, 1):
+            size = call + pot + call
+            if size >= 0.5 * S:
+                return ALL_IN, 'p3', info
+            return RAISE_TO(v.my_bet + size), 'p3', info
         return FOLD, 'post_fold', info
 
     thr = config.value_bet_eq_hu if n == 1 else config.value_bet_eq_multi
