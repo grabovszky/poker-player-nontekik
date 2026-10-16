@@ -220,9 +220,9 @@ def priors(acc):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--logs', default=os.path.join(ROOT, 'logs'))
-    ap.add_argument('--last', type=int, default=30, help='newest N game logs (opponents redeploy often)')
+    ap.add_argument('--last', type=int, default=60, help='newest N game logs')
     args = ap.parse_args()
-    files = sorted(glob.glob(os.path.join(args.logs, '*', '*.json')), key=os.path.basename)[-args.last:]  # ids are chronological
+    files = sorted(glob.glob(os.path.join(args.logs, '*', '*.json')), key=os.path.getmtime)[-args.last:]
     A = fit(files)
     profs = dict((n, profile(a)) for n, a in A.items() if n != US and a.c['hands'])
     pri = dict((n, priors(a)) for n, a in A.items() if n != US and a.c['hands'])
