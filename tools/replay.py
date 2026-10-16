@@ -49,6 +49,7 @@ def main():
     ap.add_argument('--tournament', default=None)
     ap.add_argument('--since-version', default='')
     ap.add_argument('--last', type=int, default=40)
+    ap.add_argument('--preflop', action='store_true', help='with --show: include preflop decisions')
     ap.add_argument('--show', type=float, default=0, help='print postflop decisions of hands we lost >= this many BB')
     args = ap.parse_args()
     tid = args.tournament or F.find_tournament()
@@ -82,14 +83,15 @@ def main():
                     st1 = dict((p['name'], p['stack'] + p.get('bet', 0)) for p in h['end']['players'])
                     bb = 2.0 * (h['sb'] or 1)
                     newfold[k] = (-gs['players'][gs['in_action']]['bet'] / bb, (st1[US] - st0[US]) / bb)
-            if args.show and gs['community_cards']:
+            if args.show and (gs['community_cards'] or args.preflop):
                 st0 = dict((p['name'], p['stack']) for p in h['start']['players'])
                 st1 = dict((p['name'], p['stack'] + p.get('bet', 0)) for p in h['end']['players'])
                 if (st0[US] - st1[US]) / (2.0 * (h['sb'] or 1)) >= args.show:
                     rec = json.loads(out.splitlines()[-1]) if out.strip() else {}
                     print('  %s r%s %s %s | logged %s %d -> now %s %d | eq %s aggr %s req %s' % (
                         g['_id'][-6:], h['round'], rec.get('hand'), rec.get('board'), kind, amt, rec.get('intent'), a,
-                        rec.get('eq'), rec.get('aggr'), rec.get('required')))
+                        rec.get('eq'), rec.get('aggr'), rec.get('required')) + (' | %s p_fold %s ranges %s pct %s' % (
+                        rec.get('reason_code'), rec.get('p_fold'), rec.get('ranges'), rec.get('pct')) if args.preflop else ''))
             if h['round'] not in done and not gs['community_cards']:
                 done.add(h['round'])
                 rec = {}
