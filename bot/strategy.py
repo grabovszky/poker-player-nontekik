@@ -2,7 +2,7 @@
 import time
 import zlib
 
-from . import config, opponents, tournament, preflop, postflop, log, livelog
+from . import config, opponents, tournament, preflop, postflop, log, livelog, exploits
 from .actions import CHECK, legal_amount
 from .state import View
 from .cards import to_str
@@ -35,10 +35,15 @@ def bet_request(gs, t0):
     elif not v.opps:
         intent, reason, info = CHECK, 'walk', {}
     elif v.street == 0:
-        intent, reason, info = preflop.decide(v, ctx)
+        x = exploits.preflop(v)
+        if x:
+            intent, reason, info = x[0], x[1], {}
+        else:
+            intent, reason, info = preflop.decide(v, ctx)
     else:
         intent, reason, info = postflop.decide(v, ctx)
     amt = legal_amount(intent, v)
+    exploits.note(v, amt)
     try:
         opponents.record_ours(v, amt)
     except Exception:

@@ -77,4 +77,24 @@ def exploit(v, ctx, eq, opp):
         _fired.clear()
     _fired[key] = True
     b = int(frac * EXPLOIT_SIZE * max(v.pot, 1))
+    if opp.get('name') == 'megistekik':
+        # v0.25+ calls our heads-up bets light unless they are "big" (>= half pot and >= 1/4 of its stack)
+        b = max(int(0.75 * v.pot), int(opp.get('stack') or 0) // 4 + 1)
+        if b > 1.2 * v.pot:
+            _fired.pop(key, None)
+            return None
+    return v.my_stack if b >= 0.6 * v.my_stack else b
+
+
+# nontechyk bets every hand with >= 0.6 equity vs a random hand and needs about that to call a >= half-pot bet:
+# once it has checked to us heads-up, a 3/4-pot bet folds nearly all of it, on every street.
+NT_STAB = True
+
+
+def nontechyk_stab(v, opp):
+    if not NT_STAB or opp.get('name') != 'nontechyk' or v.call or int(opp.get('stack') or 0) == 0:
+        return None
+    if any(p is opp for p in v.behind):
+        return None   # it has not acted on this street yet
+    b = int(0.75 * max(v.pot, 1))
     return v.my_stack if b >= 0.6 * v.my_stack else b

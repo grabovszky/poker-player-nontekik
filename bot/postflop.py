@@ -9,6 +9,7 @@ from .evaluator import evaluate, category
 # 2 = weak pair, 3 = top pair / overpair, 4 = two pair or better (made with hole cards)
 KEEP = {1: (None, 0.8, 1.0, 1.0, 1.0), 2: (None, 0.4, 0.5, 1.0, 1.0), 3: (None, 0.25, 0.2, 0.6, 1.0)}
 
+NT_VALUE_FRAC = 0.45
 PROXY = {0: 0.25, 1: 0.50, 2: 0.68, 3: 0.78, 4: 0.85, 5: 0.88, 6: 0.93, 7: 0.97, 8: 0.99}
 
 
@@ -153,6 +154,11 @@ def decide(v, ctx):
             frac = 0.75
         if arch == 'station':
             frac = 0.85
+        if n == 1 and opps[0].get('name') == 'megistekik':
+            # stay under its "big bet" line (>= half pot and >= 1/4 of its stack) so it calls light
+            frac = max(0.33, min(0.66, (_st(opps[0]) // 4 - 1) / float(max(pot, 1))))
+        if n == 1 and opps[0].get('name') == 'nontechyk':
+            frac = NT_VALUE_FRAC  # it calls ~0.4-pot bets from ~0.41 raw equity, >= half pot only from ~0.6
         if vs_bpex:
             frac = 0.7
         size = max(v.bb, int(frac * pot))
@@ -160,6 +166,9 @@ def decide(v, ctx):
             return ALL_IN, 'post_value_allin', info
         return RAISE_TO(v.my_bet + size), 'post_value', info
     if n == 1 and v.opps_live:
+        b = bluff.nontechyk_stab(v, opps[0])
+        if b:
+            return RAISE_TO(v.my_bet + b), 'post_nt_stab', info
         b = bluff.exploit(v, ctx, eq, opps[0])
         if b:
             return RAISE_TO(v.my_bet + b), 'post_exploit_bluff', info
