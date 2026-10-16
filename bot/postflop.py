@@ -4,16 +4,14 @@ import math
 from . import config, equity, bluff, opponents, tables, tournament
 from .actions import FOLD, CHECK, CALL, ALL_IN, RAISE_TO
 from .evaluator import evaluate, category
-from .exploits import k
+from .exploits import BPEX, MEGISTEKIK, NONTECHYK
 
 # keep-probability of a villain combo by (aggression level, strength class); 0 = air, 1 = draw,
 # 2 = weak pair, 3 = top pair / overpair, 4 = two pair or better (made with hole cards)
 KEEP = {1: (None, 0.8, 1.0, 1.0, 1.0), 2: (None, 0.4, 0.5, 1.0, 1.0), 3: (None, 0.25, 0.2, 0.6, 1.0)}
 
-V3 = 0.45
-R2 = True
-R3 = False
-L2 = False
+NT_VALUE_FRAC = 0.45   # nontechyk calls ~0.4-pot bets from ~0.41 raw equity, >= half pot only from ~0.6
+NT_RAISE_BLUFF = True  # its half-pot/tiny bets are ~44% air (live) and it folds ~0.8-equity-less hands to a raise
 PROXY = {0: 0.25, 1: 0.50, 2: 0.68, 3: 0.78, 4: 0.85, 5: 0.88, 6: 0.93, 7: 0.97, 8: 0.99}
 
 
@@ -70,10 +68,9 @@ def aggression(v, p, lvl):
 def villain_combos(ctx, v, p, lvl):
     combos = tables.range_combos(_range_pct(ctx, p))
     a = aggression(v, p, lvl)
-    if k(p) == 75655 and v.call:
+    if p.get('name') == NONTECHYK and v.call:
+        # live: its < 0.8-pot bets are ~44% air, its >= 0.8-pot bets always top pair or better
         a = 0 if v.call < 0.8 * max(v.pot - v.call, 1) else 3
-    if L2 and k(p) == 76900 and v.call and v.call < 0.55 * max(v.pot - v.call, 1):
-        a = min(a, 1)
     if a == 0:
         return combos, a
     dead = set(v.hole + v.board)
@@ -173,34 +170,32 @@ def decide(v, ctx):
             return RAISE_TO(v.my_bet + size), 'post_raise', info
         if eq >= required + margin:
             return CALL, 'post_call', info
-        if R2 and n == 1 and v.opps_live and k(agg) == 75655 and call < 0.8 * max(pot - call, 1):
+        if NT_RAISE_BLUFF and n == 1 and v.opps_live and agg.get('name') == NONTECHYK \
+                and call < 0.8 * max(pot - call, 1):
             size = call + pot + call
             if size >= 0.5 * S and ctx.icm:
                 return FOLD, 'post_fold', info
             if size >= 0.5 * S:
-                return ALL_IN, 'p3', info
-            return RAISE_TO(v.my_bet + size), 'p3', info
-        if R3 and n == 1 and v.opps_live and k(agg) == 76900 and call < 0.55 * max(pot - call, 1):
-            size = max(call + pot + call, call + _st(agg) // 4 + 1)
-            if size <= 1.5 * (pot + call):
-                return (ALL_IN if size >= 0.5 * S else RAISE_TO(v.my_bet + size)), 'p4', info
+                return ALL_IN, 'post_nt_raise_bluff', info
+            return RAISE_TO(v.my_bet + size), 'post_nt_raise_bluff', info
         return FOLD, 'post_fold', info
 
     thr = config.value_bet_eq_hu if n == 1 else config.value_bet_eq_multi
-    kk = k(opps[0]) if n == 1 else 0
-    if kk == 30710:
-        thr = 0.55
+    hu_name = opps[0].get('name') if n == 1 else None
+    if hu_name == BPEX:
+        thr = 0.55  # bpex calls our <= pot bets wide: value-bet thinner, at <= 0.8 pot
     if eq >= thr and v.opps_live:
         frac = 0.66
         if wet(v.board):
             frac = 0.75
         if arch == 'station':
             frac = 0.85
-        if kk == 76900:
+        if hu_name == MEGISTEKIK:
+            # stay under its "big bet" line (>= half pot and >= 1/4 of its stack) so it calls light
             frac = max(0.33, min(0.66, (_st(opps[0]) // 4 - 1) / float(max(pot, 1))))
-        if kk == 75655:
-            frac = V3
-        if kk == 30710:
+        if hu_name == NONTECHYK:
+            frac = NT_VALUE_FRAC
+        if hu_name == BPEX:
             frac = 0.7
         size = max(v.bb, int(frac * pot))
         if spr <= config.low_spr_shove or size >= 0.5 * S:
@@ -211,16 +206,16 @@ def decide(v, ctx):
             return ALL_IN, 'post_value_allin', info
         return RAISE_TO(v.my_bet + size), 'post_value', info
     if n == 1 and v.opps_live:
-        b = bluff.stab(v, opps[0])
+        b = bluff.nontechyk_stab(v, opps[0])
         if b and ctx.icm and b >= S:
             b = None
         if b:
-            return RAISE_TO(v.my_bet + b), 'p2', info
+            return RAISE_TO(v.my_bet + b), 'post_nt_stab', info
         b = bluff.exploit(v, ctx, eq, opps[0])
         if b and ctx.icm and b >= S:
             b = None
         if b:
-            return RAISE_TO(v.my_bet + b), 'p1', info
+            return RAISE_TO(v.my_bet + b), 'post_exploit_bluff', info
         b = bluff.decide(v, ctx, eq, opps[0])
         if b:
             return RAISE_TO(v.my_bet + b), 'post_bluff', info

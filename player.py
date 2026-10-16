@@ -12,7 +12,7 @@ def _stack(gs):
 
 
 class Player:
-    VERSION = "nontekik"
+    VERSION = "1.3.0 survival ICM all-ins + opponent counters"
     team_name = "nontekik"
 
     def betRequest(self, game_state):

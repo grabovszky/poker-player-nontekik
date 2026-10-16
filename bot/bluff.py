@@ -2,11 +2,13 @@
 import random
 
 from . import config
-from .exploits import k
+from .exploits import BPEX, MEGISTEKIK, NONTECHYK
 
 SIZES = ((0.5, 1), (0.75, 1), (1.0, 2))
 
-_W = {30710: 1.6, 76900: 1.0, 75655: 1.0}
+# Heads-up big-bet bluffs vs opponents whose source reads our bet size as hand strength. Pot fraction before
+# EXPLOIT_SIZE. bpex 4.3+ calls our 1.05-1.45x pot bets with any 0.4-equity hand, so bluff it just under pot.
+BIG_BET_FOLDERS = {BPEX: 1.6, MEGISTEKIK: 1.0, NONTECHYK: 1.0}
 
 
 def has_draw(hole, board):
@@ -56,40 +58,45 @@ def decide(v, ctx, eq, opp):
     return best
 
 
-M = 0.35
-Z = 0.6
-ST = (3, 4, 5)
-_f = {}
+EXPLOIT_MAX_EQ = 0.35       # only turn hands with no showdown value into bluffs
+EXPLOIT_SIZE = 0.6          # scales BIG_BET_FOLDERS (sim vs their real code: 0.6 beat 1.0)
+EXPLOIT_STREETS = (3, 4, 5)
+_fired = {}                 # (game_id, round) -> True once we bluffed this hand: never barrel
 
 
 def exploit(v, ctx, eq, opp):
-    kk = k(opp)
-    frac = _W.get(kk)
+    """Heads-up big-bet bluff against a known big-bet folder; off once their measured fold rate says no."""
+    name = opp.get('name')
+    frac = BIG_BET_FOLDERS.get(name)
     key = (v.game_id, v.round)
-    if frac is None or int(opp.get('stack') or 0) == 0 or eq > M or v.street not in ST or key in _f:
+    if frac is None or int(opp.get('stack') or 0) == 0 or eq > EXPLOIT_MAX_EQ or v.street not in EXPLOIT_STREETS \
+            or key in _fired:
         return None
-    f, n = ctx.model(opp.get('name')).fold_to_bet(2)
+    f, n = ctx.model(name).fold_to_bet(2)
     if n >= config.min_samples and f < 0.45:
         return None
-    if len(_f) > 5000:
-        _f.clear()
-    _f[key] = True
-    b = int(frac * Z * max(v.pot, 1))
-    if kk == 76900:
+    if len(_fired) > 5000:
+        _fired.clear()
+    _fired[key] = True
+    b = int(frac * EXPLOIT_SIZE * max(v.pot, 1))
+    if name == MEGISTEKIK:
+        # v0.25+ calls our heads-up bets light unless they are "big" (>= half pot and >= 1/4 of its stack)
         b = max(int(0.75 * v.pot), int(opp.get('stack') or 0) // 4 + 1)
         if b > 1.2 * v.pot:
-            _f.pop(key, None)
+            _fired.pop(key, None)
             return None
     return v.my_stack if b >= 0.6 * v.my_stack else b
 
 
-S2 = True
+# nontechyk bets every hand with >= 0.6 equity vs a random hand and needs about that to call a >= half-pot bet,
+# so once it has checked to us heads-up a 3/4-pot bet folds nearly all of it (live: 42 of 43 folds).
+NT_STAB = True
 
 
-def stab(v, opp):
-    if not S2 or k(opp) != 75655 or v.call or int(opp.get('stack') or 0) == 0:
+def nontechyk_stab(v, opp):
+    if not NT_STAB or opp.get('name') != NONTECHYK or v.call or int(opp.get('stack') or 0) == 0:
         return None
     if any(p is opp for p in v.behind):
-        return None
+        return None   # it has not acted on this street yet
     b = int(0.75 * max(v.pot, 1))
     return v.my_stack if b >= 0.6 * v.my_stack else b
