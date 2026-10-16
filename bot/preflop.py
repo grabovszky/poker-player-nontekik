@@ -5,6 +5,17 @@ from .cards import hand_class
 
 OPEN_BY_BEHIND = {0: 0.50, 1: 0.45, 2: 0.32, 3: 0.25, 4: 0.20, 5: 0.16}
 RESTEAL_MAX_PCT = 0.30
+NS = ((1, 1.0), (5, 0.71), (10, 0.58), (15, 0.45), (20, 0.38))
+NC = ((1, 1.0), (5, 0.62), (10, 0.38), (15, 0.29), (20, 0.24))
+
+
+def _interp(tab, x):
+    if x <= tab[0][0]:
+        return tab[0][1]
+    for (x0, y0), (x1, y1) in zip(tab, tab[1:]):
+        if x <= x1:
+            return y0 + (y1 - y0) * (x - x0) / float(x1 - x0)
+    return tab[-1][1]
 
 
 def _raiser_cont(p):
@@ -97,6 +108,8 @@ def _unopened(v, ctx, cls, info):
         alt = tables.eq_vs_random(cls, len(v.opps)) * v.pot * 0.8 if can_check else 0.0
         if _shove_ok(ev, pts, bb, ctx, alt):
             return ALL_IN, 'pf_shove', info
+        if hu and not can_check and pct <= _interp(NS, v.eff_bb):
+            return ALL_IN, 'pf_shove_n', info
         return (CHECK if can_check else FOLD), 'pf_pushfold_no', info
 
     z3 = v.eff_bb > config.z2_max_bb
@@ -138,14 +151,17 @@ def _facing_raise(v, ctx, cls, info):
     margin = _var_margin(ctx)
     info.update({'eq': round(eq, 3), 'required': round(required, 3), 'ranges': [round(r, 2) for r in ranges]})
     agg_allin = agg is not None and _st(agg) == 0
-    big = call >= 0.4 * S or v.eff_bb <= config.pushfold_max_bb or (agg_allin and _bet(agg) >= 0.25 * (S + v.my_bet))
+    big = call >= 0.4 * S or v.eff_bb <= config.pushfold_max_bb or agg_allin
 
     if big:
         ok = eq >= required + margin
         if ctx.icm and agg is not None:
             f, _, w, l = tournament.icm_allin(v, v.idx_of(agg), call_eff, 0, v.idx_of(agg))
-            ok = eq * w + (1 - eq) * l > f + {-1: 0.01, 0: 0.0, 1: -0.01}[ctx.var]
-            info['icm'] = [round(f, 3), round(w, 3), round(l, 3)]
+            need = (f - l) / (w - l) if w > l else 1.0
+            ok = eq > need + {-1: 0.01, 0: 0.0, 1: -0.01}[ctx.var]
+            info['icm'] = [round(f, 3), round(w, 3), round(l, 3), round(need, 3)]
+        elif not ctx.icm and v.n_alive == 2 and agg_allin and pct <= _interp(NC, v.eff_bb):
+            ok = ok or eq >= required - 0.05
         if ok:
             if agg_allin or call >= S:
                 return CALL, 'pf_call_allin', info
