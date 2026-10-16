@@ -12,6 +12,8 @@ KEEP = {1: (None, 0.8, 1.0, 1.0, 1.0), 2: (None, 0.4, 0.5, 1.0, 1.0), 3: (None, 
 
 V3 = 0.45
 R2 = True
+R3 = True
+L2 = True
 PROXY = {0: 0.25, 1: 0.50, 2: 0.68, 3: 0.78, 4: 0.85, 5: 0.88, 6: 0.93, 7: 0.97, 8: 0.99}
 
 
@@ -70,6 +72,8 @@ def villain_combos(ctx, v, p, lvl):
     a = aggression(v, p, lvl)
     if k(p) == 75655 and v.call:
         a = 0 if v.call < 0.8 * max(v.pot - v.call, 1) else 3
+    if L2 and k(p) == 76900 and v.call and v.call < 0.55 * max(v.pot - v.call, 1):
+        a = min(a, 1)
     if a == 0:
         return combos, a
     dead = set(v.hole + v.board)
@@ -151,6 +155,10 @@ def decide(v, ctx):
             if size >= 0.5 * S:
                 return ALL_IN, 'p3', info
             return RAISE_TO(v.my_bet + size), 'p3', info
+        if R3 and n == 1 and v.opps_live and k(agg) == 76900 and call < 0.55 * max(pot - call, 1):
+            size = max(call + pot + call, call + _st(agg) // 4 + 1)
+            if size <= 1.5 * (pot + call):
+                return (ALL_IN if size >= 0.5 * S else RAISE_TO(v.my_bet + size)), 'p4', info
         return FOLD, 'post_fold', info
 
     thr = config.value_bet_eq_hu if n == 1 else config.value_bet_eq_multi
