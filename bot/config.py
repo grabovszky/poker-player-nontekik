@@ -1,0 +1,25 @@
+# All tunables in one place: a tweak is a one-line diff.
+decision_budget_ms = 120
+game_time_soft_cap_s = 15
+mc_max_iters = 20000
+pushfold_max_bb = 12
+z2_max_bb = 25
+open_raise_bb = 2.5
+z2_open_raise_bb = 2.2
+prior_call_range_vs_shove = 0.35
+prior_shove_range = 0.30
+prior_aggr_range = 0.20
+prior_fold_to_bet = 0.45
+call_margin_base = 0.03
+call_margin_per_extra_opp = 0.02
+value_bet_eq_hu = 0.60
+value_bet_eq_multi = 0.70
+raise_eq_hu = 0.70
+raise_eq_multi = 0.80
+low_spr_shove = 1.5
+bluff_fold_margin = 0.05
+min_samples = 8
+version_change_decay = 0.2
+cutoff_mode_s = 150
+raise_plus_one = False      # flip if the dealer treats call+min_raise as a call
+state_ttl_s = 900

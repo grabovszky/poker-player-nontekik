@@ -1,9 +1,10 @@
 import time
-import cgi
 import json
 import urllib.parse
 import http.server
 import os
+import sys
+import traceback
 from player import Player
 
 
@@ -13,42 +14,38 @@ PORT_NUMBER = 'PORT' in os.environ and int(os.environ['PORT']) or 9000
 
 class PlayerService(http.server.BaseHTTPRequestHandler):
 
+    def log_message(self, format, *args):
+        pass
+
     def do_POST(self):
+        response = b''
+        action = ''
+        try:
+            length = int(self.headers.get('content-length') or 0)
+            qs = self.rfile.read(length).decode()
+            postvars = urllib.parse.parse_qs(qs, keep_blank_values=1)
+            action = postvars.get('action', [''])[0]
+            game_state = json.loads(postvars['game_state'][0]) if 'game_state' in postvars else {}
+
+            if action == 'bet_request':
+                response = b'%d' % Player().betRequest(game_state)
+            elif action == 'showdown':
+                Player().showdown(game_state)
+            elif action == 'version':
+                response = Player.VERSION.encode()
+        except Exception:
+            sys.stderr.write('WARN service error: %s\n' % traceback.format_exc())
+            if action == 'bet_request':
+                response = b'0'
 
         self.send_response(200)
         self.send_header("Content-type", "application/json")
         self.end_headers()
-
-        ctype, pdict = cgi.parse_header(self.headers['content-type'])
-        if ctype == 'multipart/form-data':
-            postvars = cgi.parse_multipart(self.rfile, pdict)
-        elif ctype == 'application/x-www-form-urlencoded':
-            length = int(self.headers['content-length'])
-            qs = self.rfile.read(length).decode()
-            postvars = urllib.parse.parse_qs(qs, keep_blank_values=1)
-        else:
-            postvars = {}
-
-        action = postvars['action'][0]
-
-        if 'game_state' in postvars:
-            game_state = json.loads(postvars['game_state'][0])
-        else:
-            game_state = {}
-
-
-        response = b''
-        if action == 'bet_request':
-            response = b'%d' % Player().betRequest(game_state)
-        elif action == 'showdown':
-            Player().showdown(game_state)
-        elif action == 'version':
-            response = Player.VERSION.encode()
-
         self.wfile.write(response)
 
+
 if __name__ == '__main__':
-    server_class = http.server.HTTPServer
+    server_class = http.server.ThreadingHTTPServer
     httpd = server_class((HOST_NAME, PORT_NUMBER), PlayerService)
     print((time.asctime(), "Server Starts - %s:%s" % (HOST_NAME, PORT_NUMBER)))
     try:
