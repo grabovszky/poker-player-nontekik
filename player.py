@@ -16,7 +16,7 @@ def transform_cards(cards):
 class Player:
     VERSION = "nontekik_v0.2.0"
     order = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
-    team_name = "So Deal With It "
+    team_name = "nontekik "
 
     def is_irational(self, cfg):
         return random.random() > cfg.get('randomness', 0.5)
