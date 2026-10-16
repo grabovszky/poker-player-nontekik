@@ -1,4 +1,10 @@
-"""Precomputed preflop tables (bot/data/preflop.json, built by tools/gen_tables.py)."""
+"""Precomputed preflop tables (bot/data/preflop.json, built by tools/gen_tables.py).
+
+169 hand classes (AA, AKs, AKo, ...). PCT[class] is its combo-weighted percentile (0 = AA, 1 = 32o),
+so "top 20% of hands" is every class with PCT <= 0.2. eq_hu(class, pct) is our heads-up equity vs a
+top-pct range from the 169x169 equity matrix (with card removal); eq_vs_random(class, n) is equity vs
+n random hands. Preflop decisions are table lookups, so they cost microseconds.
+"""
 import json
 import os
 from functools import lru_cache

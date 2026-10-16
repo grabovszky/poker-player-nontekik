@@ -3,6 +3,11 @@
   python tools/sim.py --a current --b baseline --n 2000
   --a/--b: current (working tree) | baseline (= git:HEAD) | git:<ref> | path:<dir> | <BuiltinBot>
 Paired comparison: game i uses the same lineup, seats and deck seed for A and B.
+
+Opponents: by default the three live bots as fitted from real logs by tools/fit_opps.py (action
+probabilities by hand-strength bin, tools/data/opp_profiles.json). Simple archetypes (Folder, AllIn,
+CallingStation, ChenPusher, TightPassive, RandomAggro, ThresholdCaller) can be picked with --opps.
+Results are noisy: trust differences only well outside the printed 95% interval, and confirm live.
 """
 import argparse
 import importlib.util
@@ -106,6 +111,16 @@ def b_randomaggro(s):
     return _call(s) + s['minimum_raise'] + int(r * s['pot'])
 
 
+# combo-weighted hand percentile per 13x13 class index (0 = AA), from our preflop table
+_ORDER = json.load(open(os.path.join(ROOT, 'bot', 'data', 'preflop.json')))['order']
+PCT = [0.0] * 169
+_acc = 0
+for _i in _ORDER:
+    _w = 6 if _i // 13 == _i % 13 else 4 if _i % 13 > _i // 13 else 12
+    PCT[_i] = (_acc + _w / 2.0) / 1326.0
+    _acc += _w
+
+
 def _pct(hole):
     a, b = [card_int(x) for x in hole]
     r1, r2 = max(a >> 2, b >> 2), min(a >> 2, b >> 2)
@@ -115,7 +130,7 @@ def _pct(hole):
         idx = (12 - r1) * 13 + (12 - r2)
     else:
         idx = (12 - r2) * 13 + (12 - r1)
-    return MIMIC_PCT[idx]
+    return PCT[idx]
 
 
 def mimic(prof):
@@ -154,100 +169,11 @@ def mimic(prof):
     return bot
 
 
-# ---- profile bots fitted to live opponents (tools/fetch_logs.py preflop profile)
-
-_PF = json.load(open(os.path.join(ROOT, 'bot', 'data', 'preflop.json')))
-
-
-def _cls(c1, c2):
-    r1, r2 = c1 >> 2, c2 >> 2
-    hi, lo = max(r1, r2), min(r1, r2)
-    if hi == lo:
-        return (12 - hi) * 14
-    if (c1 & 3) == (c2 & 3):
-        return (12 - hi) * 13 + (12 - lo)
-    return (12 - lo) * 13 + (12 - hi)
-
-
-def _w(i):
-    row, col = divmod(i, 13)
-    return 6 if row == col else 4 if row < col else 12
-
-
-PCT = [0.0] * 169
-_acc = 0
-for _i in _PF['order']:
-    PCT[_i] = (_acc + _w(_i) / 2.0) / 1326.0
-    _acc += _w(_i)
-
-
-def _hand_pct(s):
-    h = [card_int(c) for c in _me(s)['hole_cards']]
-    return PCT[_cls(h[0], h[1])] if len(h) == 2 else 1.0
-
-
-def _strength(s):
-    hole = [card_int(c) for c in _me(s)['hole_cards']]
-    board = [card_int(c) for c in s['community_cards']]
-    cat = EV.evaluate(hole + board) >> 20
-    cnt = sorted([sum(1 for c in board if c >> 2 == r) for r in set(c >> 2 for c in board)], reverse=True)
-    bcat = 3 if cnt[0] >= 3 else 2 if cnt[0] == 2 and len(cnt) > 1 and cnt[1] == 2 else 1 if cnt[0] == 2 else 0
-    return max(0, cat - bcat)
-
-
-class Profile(object):
-    def __init__(self, open_, shove, shove_bb, call_allin, threebet, callr, post_aggr, post_bluff, raise_x):
-        self.__dict__.update(locals())
-
-    def __call__(self, s):
-        me = _me(s)
-        stack, call, bb = me['stack'], _call(s), 2 * s['small_blind']
-        rng = random.Random('%s|%s|%s|%s' % (s['game_id'], s['round'], s['bet_index'], me['name'])).random()
-        if not s['community_cards']:
-            pct = _hand_pct(s)
-            if call >= 0.4 * stack and s['current_buy_in'] > bb:
-                return stack if pct <= self.call_allin else 0
-            if s['current_buy_in'] <= bb:
-                if pct <= self.shove or (stack <= self.shove_bb * bb and pct <= max(self.shove, 0.35)):
-                    return stack
-                if pct <= self.open_:
-                    return call + max(s['minimum_raise'], int((self.raise_x - 1) * bb))
-                return 0
-            if pct <= self.threebet:
-                return call + max(s['minimum_raise'], 2 * s['current_buy_in'])
-            if pct <= self.callr and call <= 0.2 * stack:
-                return call
-            return 0
-        st = _strength(s)
-        pot = s['pot']
-        if call == 0:
-            if st >= 2 or (st == 1 and rng < self.post_aggr) or rng < self.post_bluff:
-                return max(s['minimum_raise'], int(pot * 0.6))
-            return 0
-        if st >= 2:
-            return call + max(s['minimum_raise'], pot) if rng < self.post_aggr else call
-        if st == 1 and call <= 0.6 * pot:
-            return call
-        return call if rng < self.post_bluff * 0.5 else 0
-
-
-LIVE = {'Bpex': Profile(0.24, 0.12, 15, 0.10, 0.06, 0.20, 0.6, 0.15, 3.0),
-        'Megis': Profile(0.20, 0.04, 10, 0.06, 0.05, 0.10, 0.4, 0.05, 3.0),
-        'Techyk': Profile(0.25, 0.03, 8, 0.28, 0.10, 0.35, 0.8, 0.30, 1.5)}
-
 BUILTINS = {'Folder': b_folder, 'AllIn': b_allin, 'CallingStation': b_station, 'ChenPusher': b_chenpusher,
             'TightPassive': b_tightpassive, 'RandomAggro': b_randomaggro, 'ThresholdCaller': b_thresholdcaller}
-BUILTINS.update(LIVE)
+# Opponents fitted from real logs by tools/fit_opps.py, named after the live bots (the default table).
 _PROF = os.path.join(ROOT, 'tools', 'data', 'opp_profiles.json')
 MIMICS = json.load(open(_PROF)) if os.path.exists(_PROF) else {}
-_tab = json.load(open(os.path.join(ROOT, 'bot', 'data', 'preflop.json'))) if MIMICS else None
-MIMIC_PCT = [0.0] * 169
-if _tab:
-    _w = [6 if i // 13 == i % 13 else 4 if i % 13 > i // 13 else 12 for i in range(169)]
-    _acc = 0
-    for _i in _tab['order']:
-        MIMIC_PCT[_i] = (_acc + _w[_i] / 2.0) / 1326.0
-        _acc += _w[_i]
 for _n, _p in MIMICS.items():
     BUILTINS[_n] = mimic(_p)
 
@@ -473,10 +399,6 @@ def init(cand, args):
 
 def lineup(i, args):
     rng = random.Random(args.seed * 100003 + i)
-    if args.opps == 'live':  # the real table: us + the three live opponents, random seats
-        names = sorted(LIVE)
-        names.insert(rng.randrange(len(names) + 1), OUR_NAME)
-        return names, rng.randrange(1 << 30)
     pool = args.opps.split(',')
     k = rng.randint(args.min_players, args.max_players) - 1
     names = rng.sample(pool, k) if len(pool) >= k else []

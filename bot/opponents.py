@@ -1,4 +1,16 @@
-"""Per-opponent model keyed by name. Correct with empty memory; decays on redeploy."""
+"""What we learn about each opponent while playing, keyed by player name.
+
+Sources: every bet_request state (bets, all-ins, folds within a hand), the showdown state (final
+statuses and revealed hole cards), bot/livelog.py (finished hands of the running game, with all hole
+cards) and bot/priors.py (stats fitted offline from older logs, applied on first sight).
+
+Counts per opponent: hands, preflop all-ins, voluntary entries, raises, folds, how often it folds to
+our shoves and to our bets by size bucket, and how strong its big bets were at showdown.
+Derived (Beta-prior smoothed, so an unknown opponent gets the config priors): shove_range,
+call_range, aggr_range, vpip_range, bluff_p, fold_to_bet(bucket) and an archetype label
+(maniac / folder / station / nit / regular). Stats decay when the opponent's version string changes.
+The bot must play correctly with empty memory (every deploy wipes it).
+"""
 import threading
 import time
 

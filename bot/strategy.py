@@ -1,8 +1,16 @@
-"""Orchestration: parse -> observe -> decide intent -> legal amount -> log."""
+"""One bet request, end to end.
+
+    raw game_state -> View (state.py) -> update the opponent model (opponents.py, livelog.py)
+      -> opponent-specific preflop rule (opponent_map.py), else generic preflop.py / postflop.py
+      -> intent (FOLD / CHECK / CALL / RAISE_TO / ALL_IN) -> legal integer (actions.py) -> one log line
+
+Ctx carries the per-decision settings: thinking deadline, ICM on/off (3+ players left), the 3-minute
+cutoff mode and an unpredictable RNG seed (so nobody can replay our mixed decisions from the code).
+"""
 import random
 import time
 
-from . import config, opponents, tournament, preflop, postflop, log, livelog, exploits
+from . import config, opponents, tournament, preflop, postflop, log, livelog, opponent_map
 from .actions import CHECK, legal_amount
 from .state import View
 from .cards import to_str
@@ -11,6 +19,8 @@ _rng = random.SystemRandom()
 
 
 class Ctx(object):
+    """Per-decision context shared by preflop and postflop."""
+
     def __init__(self, v, t0):
         self.model = opponents.get
         self.deadline = t0 + config.decision_budget_ms / 1000.0
@@ -37,7 +47,7 @@ def bet_request(gs, t0):
     elif not v.opps:
         intent, reason, info = CHECK, 'walk', {}
     elif v.street == 0:
-        x = exploits.preflop(v)
+        x = opponent_map.preflop_counter(v)
         if x:
             intent, reason, info = x[0], x[1], {}
         else:
@@ -45,7 +55,7 @@ def bet_request(gs, t0):
     else:
         intent, reason, info = postflop.decide(v, ctx)
     amt = legal_amount(intent, v)
-    exploits.note(v, amt)
+    opponent_map.note_preflop_action(v, amt)
     try:
         opponents.record_ours(v, amt)
     except Exception:

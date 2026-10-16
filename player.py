@@ -1,3 +1,5 @@
+"""Lean Poker entry point. Never lets an error reach the dealer: any exception falls back to a tiny
+safe strategy (bot/fallback.py), and every return value is forced to a legal integer."""
 import time
 
 from bot import strategy, fallback, log
@@ -12,7 +14,7 @@ def _stack(gs):
 
 
 class Player:
-    VERSION = "1.3.0 survival ICM all-ins + opponent counters"
+    VERSION = "1.3.2 readable refactor, same play as 1.3.0"
     team_name = "nontekik"
 
     def betRequest(self, game_state):

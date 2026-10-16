@@ -1,4 +1,14 @@
-"""ICM (Malmuth-Harville, payouts 5/3), per-game timers, 3-minute cutoff mode."""
+"""Tournament layer: points, not chips.
+
+Scoring is 5 points for 1st, 3 for 2nd, 0 otherwise, so chips are worth less than linear: busting 3rd
+loses everything while doubling up rarely doubles our points. icm() converts stacks into expected
+points (Malmuth-Harville); icm_allin() prices fold / win / lose outcomes of an all-in so preflop and
+postflop can ask "does this all-in gain points?" (required equity = (fold - lose) / (win - lose)).
+
+Also: per-game thinking-time accounting (table-only mode when a game has used too much time) and the
+3-minute cutoff mode (games end after ~3 minutes with places by chips: protect a lead, or gamble from
+behind).
+"""
 import threading
 import time
 

@@ -1,4 +1,16 @@
-"""Preflop: EV-based push/fold (Z1), raise-or-shove (Z2), standard opens (Z3)."""
+"""Preflop decisions, by effective stack depth (config.pushfold_max_bb / z2_max_bb).
+
+    Short (<= 8bb)      push or fold. Shove when the shove's EV is positive: fold equity from each
+                        opponent's measured call rate + our table equity vs its calling range.
+    Medium (8..25bb)    open small (2.2bb) with a range that tightens with players behind, or shove;
+                        facing a raise: re-shove (value or fold equity) or fold; defend the BB cheaply.
+    Deep (> 25bb)       open 2.5bb, 3-bet premiums, call raises with pairs / suited broadways.
+
+Facing an all-in (or a call that is >= 40% of our stack): call when our equity vs the shover's range
+beats pot odds; with 3+ players left the bar is the ICM threshold (bubble factor) instead, because
+busting 3rd scores nothing. Heads-up it is pure chip EV with Nash push/fold ranges as a floor.
+Opponent-specific preflop rules run before this module (opponent_map.preflop_counter).
+"""
 from . import config, tables, equity, tournament, opponents, priors  # noqa: F401
 from .actions import FOLD, CHECK, CALL, ALL_IN, RAISE_TO
 from .cards import hand_class

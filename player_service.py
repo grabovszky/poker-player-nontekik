@@ -1,3 +1,5 @@
+"""HTTP service the Lean Poker dealer calls (POST action=bet_request|showdown|version|check).
+Threaded, because several games run at once; always answers 200 so a crash can't get us banned."""
 import time
 import json
 import urllib.parse
