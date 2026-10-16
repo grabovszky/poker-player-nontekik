@@ -49,6 +49,7 @@ def main():
     ap.add_argument('--tournament', default=None)
     ap.add_argument('--since-version', default='')
     ap.add_argument('--last', type=int, default=40)
+    ap.add_argument('--before', default='', help='only games older than this game id (pins a fixed set while live games arrive)')
     ap.add_argument('--preflop', action='store_true', help='with --show: include preflop decisions')
     ap.add_argument('--show', type=float, default=0, help='print postflop decisions of hands we lost >= this many BB')
     args = ap.parse_args()
@@ -56,6 +57,8 @@ def main():
     games = F.get('%s/tournament/%s/game' % (F.API, tid))
     if args.since_version:
         games = [g for g in games if any(t['name'] == US and t['version'].startswith(args.since_version) for t in g['teams'])]
+    if args.before:
+        games = games[:[g['_id'] for g in games].index(args.before)]
     games = games[-args.last:]
     pl = Player()
     lat, diff, n, errs = [], 0, 0, 0
