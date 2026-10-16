@@ -8,6 +8,7 @@ from .cards import parse_many, hand_class
 _lock = threading.Lock()
 STATS = {}
 HANDS = {}
+LOG_FED = set()   # game ids whose card-based stats come from bot/livelog.py
 COUNTS = ('hands', 'allin', 'vpip', 'aggr', 'fold', 'fts_n', 'fts_f', 'big_n', 'big_weak')
 _last_cleanup = [0.0]
 
@@ -201,6 +202,8 @@ def _finalize(key, complete):
                 s['fts_f'] += f
             s['ftb_n'][last['bucket']] += 1
             s['ftb_f'][last['bucket']] += f
+        if key[0] in LOG_FED:
+            continue  # livelog counts big bets/shoves with every hand's cards, not just showdowns
         if pt['cards'] and (pt['allin'] or pt['max_bet'] > 4 * bb):
             try:
                 c = parse_many(pt['cards'])

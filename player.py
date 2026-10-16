@@ -12,7 +12,7 @@ def _stack(gs):
 
 
 class Player:
-    VERSION = "1.1.2 icm call margin, wider opens, fresh priors"
+    VERSION = "1.1.3 live opponent reads from running game log"
     team_name = "nontekik"
 
     def betRequest(self, game_state):

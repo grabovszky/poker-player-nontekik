@@ -2,7 +2,7 @@
 import time
 import zlib
 
-from . import config, opponents, tournament, preflop, postflop, log
+from . import config, opponents, tournament, preflop, postflop, log, livelog
 from .actions import CHECK, legal_amount
 from .state import View
 from .cards import to_str
@@ -25,6 +25,10 @@ def bet_request(gs, t0):
         opponents.observe(gs)
     except Exception:
         log.warn('observe failed', v.game_id)
+    try:
+        livelog.watch(gs, v.name)
+    except Exception:
+        log.warn('livelog watch failed', v.game_id)
     ctx = Ctx(v, t0)
     if len(v.hole) != 2:
         intent, reason, info = CHECK, 'no_hole_cards', {}
