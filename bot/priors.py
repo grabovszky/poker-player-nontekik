@@ -24,6 +24,7 @@ def load(path=PATH):
             s = opponents._new()
             for k in opponents.COUNTS:
                 s[k] = float(p.get(k, 0.0))
+            s['r3_n'], s['r3_c'] = float(p.get('r3_n', 0.0)), float(p.get('r3_c', 0.0))  # raiser vs a 3-bet shove
             s['shove_pcts'] = list(p.get('shove_pcts') or [])
             s['version'] = p.get('version')
             opponents.STATS[name] = s

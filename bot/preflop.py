@@ -1,9 +1,17 @@
 """Preflop: EV-based push/fold (Z1), raise-or-shove (Z2), standard opens (Z3)."""
-from . import config, tables, equity, tournament, priors  # noqa: F401  (priors seeds the opponent model)
+from . import config, tables, equity, tournament, opponents, priors  # noqa: F401  (priors seeds the model)
 from .actions import FOLD, CHECK, CALL, ALL_IN, RAISE_TO
 from .cards import hand_class
 
 OPEN_BY_BEHIND = {0: 0.50, 1: 0.45, 2: 0.32, 3: 0.25, 4: 0.20, 5: 0.16}
+RESTEAL_MAX_PCT = 0.30  # live logs: trash re-shoves (73s, T3o, J2o) over opens got called by better
+
+
+def _raiser_cont(p):
+    """P(raiser calls our 3-bet shove): measured r3 counts (priors) else 0.35."""
+    s = opponents.STATS.get(p.get('name')) or {}
+    n, c = s.get('r3_n', 0.0), s.get('r3_c', 0.0)
+    return max(0.08, min(0.9, (c + 0.35 * 5) / (n + 5)))
 
 
 def _st(p):
@@ -143,10 +151,10 @@ def _facing_raise(v, ctx, cls, info):
             if agg_allin or call >= S:
                 return CALL, 'pf_call_allin', info
             return ALL_IN, 'pf_reshove', info
-        if not agg_allin and agg is not None:  # fold equity re-shove
-            m = ctx.model(agg.get('name'))
-            cont = max(0.04, m.aggr_range * m.call_range / 0.35 * 0.5)
-            ev, pts, si = shove_ev(v, ctx, cls, [(agg, min(1.0, cont))])
+        if not agg_allin and agg is not None and pct <= RESTEAL_MAX_PCT:  # fold equity re-shove
+            callers = [(agg, _raiser_cont(agg))] + [(p, ctx.model(p.get('name')).call_range)
+                                                     for p in v.opps_live if p is not agg]
+            ev, pts, si = shove_ev(v, ctx, cls, callers)
             if _shove_ok(ev, pts, bb, ctx):
                 info.update(si)
                 return ALL_IN, 'pf_reshove_fe', info
@@ -157,10 +165,9 @@ def _facing_raise(v, ctx, cls, info):
     if not z3:
         if pct <= 0.06:
             return ALL_IN, 'pf_z2_3bet_shove', info
-        if agg is not None:
-            m = ctx.model(agg.get('name'))
-            cont = min(1.0, max(0.04, m.aggr_range * 0.5))
-            callers = [(agg, cont)] + [(p, ctx.model(p.get('name')).call_range * 0.5) for p in v.opps_live if p is not agg]
+        if agg is not None and pct <= RESTEAL_MAX_PCT:
+            callers = [(agg, _raiser_cont(agg))] + [(p, ctx.model(p.get('name')).call_range)
+                                                     for p in v.opps_live if p is not agg]
             ev, pts, si = shove_ev(v, ctx, cls, callers)
             if _shove_ok(ev, pts, bb, ctx):
                 info.update(si)

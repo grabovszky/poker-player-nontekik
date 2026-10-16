@@ -1,7 +1,7 @@
 """In-process NLHE sit'n'go simulator in the Lean Poker game_state shape.
 
   python tools/sim.py --a current --b baseline --n 2000
-  --a/--b: current (working tree) | baseline (= git:HEAD) | git:<ref> | <BuiltinBot>
+  --a/--b: current (working tree) | baseline (= git:HEAD) | git:<ref> | path:<dir> | <BuiltinBot>
 Paired comparison: game i uses the same lineup, seats and deck seed for A and B.
 """
 import argparse
@@ -136,6 +136,10 @@ def mimic(prof):
                     return stack if r.random() < fi['shove'][b] else raise_to(int(fi['size_bb'] * bb))
                 return call if call == 0 else 0
             if allin_live:
+                if me['bet'] > bb and 'r3_call' in prof:  # we opened: defend at the measured rate, best hands first
+                    d = 0 if stack < 10 * bb else 1 if stack < 20 * bb else 2 if stack < 40 * bb else 3
+                    width = sum(prof['first_in'][d]['vol']) / 10.0
+                    return call if _pct(me['hole_cards']) <= prof['r3_call'] * width else 0
                 return call if r.random() < prof['vs_allin_call'][b] else 0
             if r.random() < prof['vs_raise_cont'][b]:
                 return raise_to(3 * s['current_buy_in']) if r.random() < prof['vs_raise_reraise'][b] else call
@@ -440,6 +444,8 @@ def resolve(spec):
         spec = 'git:HEAD'
     if spec.startswith('git:'):
         return snapshot(spec[4:])
+    if spec.startswith('path:') and os.path.isfile(os.path.join(spec[5:], 'player.py')):
+        return os.path.abspath(spec[5:])
     raise SystemExit('unknown candidate %r' % spec)
 
 

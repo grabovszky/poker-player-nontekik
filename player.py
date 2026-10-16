@@ -12,7 +12,7 @@ def _stack(gs):
 
 
 class Player:
-    VERSION = "1.1.0 postflop range narrowing by aggression"
+    VERSION = "1.1.1 resteal by measured fold-to-3bet, pushfold 8bb"
     team_name = "nontekik"
 
     def betRequest(self, game_state):

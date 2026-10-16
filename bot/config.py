@@ -2,7 +2,7 @@
 decision_budget_ms = 120
 game_time_soft_cap_s = 15
 mc_max_iters = 20000
-pushfold_max_bb = 12
+pushfold_max_bb = 8           # sim vs live-fitted field: 8 > 12 > 15
 z2_max_bb = 25
 open_raise_bb = 2.5
 z2_open_raise_bb = 2.2

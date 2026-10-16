@@ -98,6 +98,7 @@ def fit(files):
                 A[n].version = ver
             raised = False
             allin_live = False
+            opener, shoved = None, False
             seen = set()
             post_bet = {}
             for a in h['acts']:
@@ -108,6 +109,14 @@ def fit(files):
                 pct = tables.PCT[hand_class(*parse_many(hole))]
                 vol = a['kind'] in ('raise', 'allin') and a['amt'] > a['call']
                 if a['street'] == 0:
+                    if opener and shoved and n == opener:
+                        acc.c['r3_n'] += 1
+                        acc.c['r3_c'] += a['kind'] != 'fold'
+                        opener = ''
+                    if opener is None and vol and not a['allin']:
+                        opener = n
+                    elif opener and n != opener and a['allin'] and a['amt'] > a['call']:
+                        shoved = True
                     if n not in seen:
                         seen.add(n)
                         acc.c['hands'] += 1
@@ -134,8 +143,6 @@ def fit(files):
                             cell[2] += vol
                     if vol:
                         raised = True
-                    if a['kind'] != 'fold' and a['mybet'] + a['amt'] > 2 * a['bb']:
-                        acc.c['vpip_h'] += 0  # counted per hand below
                     if a['allin'] and a['amt'] > a['call']:
                         allin_live = True
                         acc.shove_pcts.append(pct)
@@ -191,6 +198,7 @@ def profile(acc):
         'post_bet_size': round(po_sizes[len(po_sizes) // 2], 2) if po_sizes else 0.6,
         'post_cont': [rate(c[1], c[0], 0.5) for c in acc.post_face],
         'post_raise': [rate(c[2], c[1], 0.1) for c in acc.post_face],
+        'r3_call': rate(acc.c['r3_c'], acc.c['r3_n'], 0.35),
         'n': acc.c['hands'],
     }
 
@@ -201,6 +209,8 @@ def priors(acc):
         return None
     k = min(1.0, PRIOR_WEIGHT / float(n))
     s = dict((key, round(acc.c[key] * k, 2)) for key in ('hands', 'allin', 'vpip', 'aggr', 'fold', 'fts_n', 'fts_f'))
+    k3 = min(1.0, 15.0 / max(1, acc.c['r3_n']))  # rare spot: keep up to 15 samples
+    s['r3_n'], s['r3_c'] = round(acc.c['r3_n'] * k3, 2), round(acc.c['r3_c'] * k3, 2)
     sp = sorted(acc.shove_pcts)
     s['shove_pcts'] = [round(sp[int(q * (len(sp) - 1))], 3) for q in (0.1, 0.3, 0.5, 0.7, 0.9)] if len(sp) >= 5 else []
     s['version'] = acc.version
