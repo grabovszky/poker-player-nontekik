@@ -63,7 +63,8 @@ def hands(path):
             p, pp, prev = gs['players'][i], cur['prev']['players'][i], cur['prev']
             m = KIND.search(x['message'])
             cur['nbets'] += 1
-            if not (len(prev['community_cards']) == 0 and cur['nbets'] <= 2):
+            walk = not any(q['status'] == 'active' for j, q in enumerate(gs['players']) if j != i)  # BB acts after all folded
+            if not walk and not (len(prev['community_cards']) == 0 and cur['nbets'] <= 2):
                 cur['acts'].append({
                     'name': p['name'], 'kind': m.group(1) if m else '?', 'amt': p['bet'] - pp['bet'],
                     'street': len(prev['community_cards']), 'call': max(0, prev['current_buy_in'] - pp['bet']),

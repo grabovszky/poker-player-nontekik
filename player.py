@@ -12,7 +12,7 @@ def _stack(gs):
 
 
 class Player:
-    VERSION = "1.1.4 v1.1.1 logic + live opponent reads from game log"
+    VERSION = "1.1.5 v1.1.1 logic + live log reads, walk shoves ignored"
     team_name = "nontekik"
 
     def betRequest(self, game_state):

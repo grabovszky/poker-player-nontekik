@@ -77,6 +77,9 @@ def feed(frag, me, gid=None):
         if e.get('type') == 'bet' and prev is not None and 'on_turn' in e:
             k = e['on_turn']
             p, pp = gs['players'][k], prev['players'][k]
+            if not any(q.get('status') == 'active' for j, q in enumerate(gs['players']) if j != k):
+                prev = gs
+                continue                   # walk: BB acts after all folded (its own status lags one entry)
             name, street = p['name'], len(prev.get('community_cards') or [])
             bb = 2 * int(prev.get('small_blind') or 1)
             nbets += 1
