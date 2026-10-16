@@ -12,7 +12,7 @@ def _stack(gs):
 
 
 class Player:
-    VERSION = "1.2.2 nontechyk counters, megistekik big-bet line"
+    VERSION = "1.2.3"
     team_name = "nontekik"
 
     def betRequest(self, game_state):
