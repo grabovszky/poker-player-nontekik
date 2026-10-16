@@ -19,8 +19,11 @@ BPEX, MEGISTEKIK, NONTECHYK = 'bpex', 'megistekik', 'nontechyk'
 
 PROFILES = {
     BPEX: """
-        Preflop: pushes/folds at <= 15bb by Chen score (+3 heads-up, +1 three-handed); deeper it opens
-        ~4.5bb with Chen >= 8. Postflop: bets 3/4 pot with >= 0.75 equity vs random, 1/2 pot with >= 0.55,
+        Its strategy ships as a raw-deflate base64 blob (dist/engine.js); its README is a decoy.
+        Preflop: Chen-score thresholds (+3 heads-up, +1 three-handed): unopened it shoves at <= 15bb
+        effective; deeper it opens 4-4.5bb with Chen 8-11 and pot + 3bb with Chen >= 12 (its live
+        unopened play matched this in 98% of 2007 spots). Deep (> 25bb) after it opens, it reads our
+        non-all-in 3-bet as our top 3% and folds all but QQ+/AK; it calls our re-shove ~95%. Postflop: bets 3/4 pot with >= 0.75 equity vs random, 1/2 pot with >= 0.55,
         mixes 30% semi-bluffs. Facing our bets it assumes a range that tightens with bet size, except
         that our 1.05-1.45x pot bets are read as bluffs and called with any 0.4-equity hand (v4.3+).
         Counter: bluff it just under pot (0.96x); value-bet thinner (>= 0.55 eq) at 0.7 pot.
