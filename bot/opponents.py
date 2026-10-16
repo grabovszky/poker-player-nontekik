@@ -72,6 +72,11 @@ class Opp(object):
         return _rate(self.s['ftb_f'][bucket], n, config.prior_fold_to_bet), n
 
     @property
+    def bluff_p(self):
+        """Share of big bets/shoves shown down with weak hands (prior 0.3)."""
+        return _rate(self.s['big_weak'], self.s['big_n'], 0.3)
+
+    @property
     def archetype(self):
         if self.n < config.min_samples:
             return 'unknown'
@@ -117,6 +122,10 @@ def observe(gs, final=False):
             for k in [k for k in HANDS if k[0] == gid and k[1] != rnd]:
                 _finalize(k, False)
             tr = HANDS[key] = {'t': now, 'bb': bb, 'p': {}, 'ours': []}
+        if not board:
+            tr['pf_level'] = max(tr.get('pf_level', 0), int(gs.get('current_buy_in') or 0))
+        elif 'pf_level' not in tr and me is not None and not final:
+            tr['pf_level'] = int(gs['players'][me].get('bet') or 0)  # our bet = level before this street's action
         for i, p in enumerate(gs.get('players') or []):
             if i == me or p.get('status') == 'out':
                 continue
@@ -143,6 +152,11 @@ def observe(gs, final=False):
             _last_cleanup[0] = now
             for k in [k for k, t in HANDS.items() if now - t['t'] > config.state_ttl_s]:
                 _finalize(k, False)
+
+
+def pf_level(gid, rnd):
+    tr = HANDS.get((gid, rnd))
+    return tr.get('pf_level') if tr else None
 
 
 def _bucket(frac):

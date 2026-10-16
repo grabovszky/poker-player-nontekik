@@ -1,0 +1,53 @@
+{
+ "nontechyk": {
+  "hands": 60.0,
+  "allin": 3.58,
+  "vpip": 19.67,
+  "aggr": 17.04,
+  "fold": 36.23,
+  "fts_n": 5.57,
+  "fts_f": 3.94,
+  "shove_pcts": [
+   0.033,
+   0.078,
+   0.14,
+   0.235,
+   0.363
+  ],
+  "version": "nontechyk v9"
+ },
+ "bpex": {
+  "hands": 60.0,
+  "allin": 10.72,
+  "vpip": 21.17,
+  "aggr": 19.63,
+  "fold": 41.79,
+  "fts_n": 4.96,
+  "fts_f": 4.26,
+  "shove_pcts": [
+   0.047,
+   0.173,
+   0.339,
+   0.549,
+   0.827
+  ],
+  "version": "bpex v1.6 - rollback to v1.3 logic"
+ },
+ "megistekik": {
+  "hands": 60.0,
+  "allin": 3.48,
+  "vpip": 13.61,
+  "aggr": 13.58,
+  "fold": 45.24,
+  "fts_n": 7.03,
+  "fts_f": 6.55,
+  "shove_pcts": [
+   0.029,
+   0.078,
+   0.119,
+   0.189,
+   0.259
+  ],
+  "version": "ultragood_python_playerv0.13.0"
+ }
+}

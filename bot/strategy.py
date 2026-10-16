@@ -28,6 +28,8 @@ def bet_request(gs, t0):
     ctx = Ctx(v, t0)
     if len(v.hole) != 2:
         intent, reason, info = CHECK, 'no_hole_cards', {}
+    elif not v.opps:
+        intent, reason, info = CHECK, 'walk', {}
     elif v.street == 0:
         intent, reason, info = preflop.decide(v, ctx)
     else:

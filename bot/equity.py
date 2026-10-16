@@ -18,7 +18,7 @@ def _value(cards):
 
 
 def equity(hero, board, opp_ranges, deadline, max_iters, seed=None):
-    """opp_ranges: list of pct (0..1). Returns (equity, iterations)."""
+    """opp_ranges: list of pct (0..1) or combo lists (duplicates = weight). Returns (equity, iterations)."""
     if not opp_ranges:
         return 1.0, 0
     dead = 0
@@ -26,7 +26,8 @@ def equity(hero, board, opp_ranges, deadline, max_iters, seed=None):
         dead |= 1 << c
     ranges = []
     for p in opp_ranges:
-        live = [cb for cb in tables.range_combos(p) if not (dead >> cb[0] & 1 or dead >> cb[1] & 1)]
+        src = p if isinstance(p, list) else tables.range_combos(p)
+        live = [cb for cb in src if not (dead >> cb[0] & 1 or dead >> cb[1] & 1)]
         if not live:
             live = [cb for cb in tables.ORDERED_COMBOS if not (dead >> cb[0] & 1 or dead >> cb[1] & 1)]
         ranges.append(live)

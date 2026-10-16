@@ -1,5 +1,5 @@
 """Preflop: EV-based push/fold (Z1), raise-or-shove (Z2), standard opens (Z3)."""
-from . import config, tables, equity, tournament
+from . import config, tables, equity, tournament, priors  # noqa: F401  (priors seeds the opponent model)
 from .actions import FOLD, CHECK, CALL, ALL_IN, RAISE_TO
 from .cards import hand_class
 

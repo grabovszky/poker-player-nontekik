@@ -6,6 +6,7 @@ Paired comparison: game i uses the same lineup, seats and deck seed for A and B.
 """
 import argparse
 import importlib.util
+import json
 import math
 import os
 import random
@@ -105,8 +106,146 @@ def b_randomaggro(s):
     return _call(s) + s['minimum_raise'] + int(r * s['pot'])
 
 
+def _pct(hole):
+    a, b = [card_int(x) for x in hole]
+    r1, r2 = max(a >> 2, b >> 2), min(a >> 2, b >> 2)
+    if r1 == r2:
+        idx = (12 - r1) * 13 + (12 - r1)
+    elif (a & 3) == (b & 3):
+        idx = (12 - r1) * 13 + (12 - r2)
+    else:
+        idx = (12 - r2) * 13 + (12 - r1)
+    return MIMIC_PCT[idx]
+
+
+def mimic(prof):
+    """Opponent fitted from real logs (tools/fit_opps.py): action probabilities by hand percentile bin."""
+    def bot(s):
+        me = _me(s)
+        r = random.Random('%s|%s|%s|%s' % (s['game_id'], s['round'], s['bet_index'], me['name']))
+        bb = 2 * s['small_blind']
+        call, stack = _call(s), me['stack']
+        raise_to = lambda total: max(call + s['minimum_raise'], total - me['bet'])  # noqa: E731
+        if not s['community_cards']:
+            b = min(9, int(_pct(me['hole_cards']) * 10))
+            allin_live = any(p['status'] == 'active' and p['stack'] == 0 and p['bet'] > bb for p in s['players'])
+            if s['current_buy_in'] <= bb:
+                d = 0 if stack < 10 * bb else 1 if stack < 20 * bb else 2 if stack < 40 * bb else 3
+                fi = prof['first_in'][d]
+                if r.random() < fi['vol'][b]:
+                    return stack if r.random() < fi['shove'][b] else raise_to(int(fi['size_bb'] * bb))
+                return call if call == 0 else 0
+            if allin_live:
+                return call if r.random() < prof['vs_allin_call'][b] else 0
+            if r.random() < prof['vs_raise_cont'][b]:
+                return raise_to(3 * s['current_buy_in']) if r.random() < prof['vs_raise_reraise'][b] else call
+            return 0
+        m = _made(s)
+        st = 0 if m == 0 else 1 if m == 1 else 2
+        if call == 0:
+            return raise_to(int(prof['post_bet_size'] * s['pot'])) if r.random() < prof['post_bet'][st] else 0
+        if r.random() < prof['post_cont'][st]:
+            return raise_to(int(2.5 * s['current_buy_in'])) if r.random() < prof['post_raise'][st] else call
+        return 0
+    return bot
+
+
+# ---- profile bots fitted to live opponents (tools/fetch_logs.py preflop profile)
+
+_PF = json.load(open(os.path.join(ROOT, 'bot', 'data', 'preflop.json')))
+
+
+def _cls(c1, c2):
+    r1, r2 = c1 >> 2, c2 >> 2
+    hi, lo = max(r1, r2), min(r1, r2)
+    if hi == lo:
+        return (12 - hi) * 14
+    if (c1 & 3) == (c2 & 3):
+        return (12 - hi) * 13 + (12 - lo)
+    return (12 - lo) * 13 + (12 - hi)
+
+
+def _w(i):
+    row, col = divmod(i, 13)
+    return 6 if row == col else 4 if row < col else 12
+
+
+PCT = [0.0] * 169
+_acc = 0
+for _i in _PF['order']:
+    PCT[_i] = (_acc + _w(_i) / 2.0) / 1326.0
+    _acc += _w(_i)
+
+
+def _hand_pct(s):
+    h = [card_int(c) for c in _me(s)['hole_cards']]
+    return PCT[_cls(h[0], h[1])] if len(h) == 2 else 1.0
+
+
+def _strength(s):
+    hole = [card_int(c) for c in _me(s)['hole_cards']]
+    board = [card_int(c) for c in s['community_cards']]
+    cat = EV.evaluate(hole + board) >> 20
+    cnt = sorted([sum(1 for c in board if c >> 2 == r) for r in set(c >> 2 for c in board)], reverse=True)
+    bcat = 3 if cnt[0] >= 3 else 2 if cnt[0] == 2 and len(cnt) > 1 and cnt[1] == 2 else 1 if cnt[0] == 2 else 0
+    return max(0, cat - bcat)
+
+
+class Profile(object):
+    def __init__(self, open_, shove, shove_bb, call_allin, threebet, callr, post_aggr, post_bluff, raise_x):
+        self.__dict__.update(locals())
+
+    def __call__(self, s):
+        me = _me(s)
+        stack, call, bb = me['stack'], _call(s), 2 * s['small_blind']
+        rng = random.Random('%s|%s|%s|%s' % (s['game_id'], s['round'], s['bet_index'], me['name'])).random()
+        if not s['community_cards']:
+            pct = _hand_pct(s)
+            if call >= 0.4 * stack and s['current_buy_in'] > bb:
+                return stack if pct <= self.call_allin else 0
+            if s['current_buy_in'] <= bb:
+                if pct <= self.shove or (stack <= self.shove_bb * bb and pct <= max(self.shove, 0.35)):
+                    return stack
+                if pct <= self.open_:
+                    return call + max(s['minimum_raise'], int((self.raise_x - 1) * bb))
+                return 0
+            if pct <= self.threebet:
+                return call + max(s['minimum_raise'], 2 * s['current_buy_in'])
+            if pct <= self.callr and call <= 0.2 * stack:
+                return call
+            return 0
+        st = _strength(s)
+        pot = s['pot']
+        if call == 0:
+            if st >= 2 or (st == 1 and rng < self.post_aggr) or rng < self.post_bluff:
+                return max(s['minimum_raise'], int(pot * 0.6))
+            return 0
+        if st >= 2:
+            return call + max(s['minimum_raise'], pot) if rng < self.post_aggr else call
+        if st == 1 and call <= 0.6 * pot:
+            return call
+        return call if rng < self.post_bluff * 0.5 else 0
+
+
+LIVE = {'Bpex': Profile(0.24, 0.12, 15, 0.10, 0.06, 0.20, 0.6, 0.15, 3.0),
+        'Megis': Profile(0.20, 0.04, 10, 0.06, 0.05, 0.10, 0.4, 0.05, 3.0),
+        'Techyk': Profile(0.25, 0.03, 8, 0.28, 0.10, 0.35, 0.8, 0.30, 1.5)}
+
 BUILTINS = {'Folder': b_folder, 'AllIn': b_allin, 'CallingStation': b_station, 'ChenPusher': b_chenpusher,
             'TightPassive': b_tightpassive, 'RandomAggro': b_randomaggro, 'ThresholdCaller': b_thresholdcaller}
+BUILTINS.update(LIVE)
+_PROF = os.path.join(ROOT, 'tools', 'data', 'opp_profiles.json')
+MIMICS = json.load(open(_PROF)) if os.path.exists(_PROF) else {}
+_tab = json.load(open(os.path.join(ROOT, 'bot', 'data', 'preflop.json'))) if MIMICS else None
+MIMIC_PCT = [0.0] * 169
+if _tab:
+    _w = [6 if i // 13 == i % 13 else 4 if i % 13 > i // 13 else 12 for i in range(169)]
+    _acc = 0
+    for _i in _tab['order']:
+        MIMIC_PCT[_i] = (_acc + _w[_i] / 2.0) / 1326.0
+        _acc += _w[_i]
+for _n, _p in MIMICS.items():
+    BUILTINS[_n] = mimic(_p)
 
 
 # ---------------------------------------------------------------- engine
@@ -328,6 +467,10 @@ def init(cand, args):
 
 def lineup(i, args):
     rng = random.Random(args.seed * 100003 + i)
+    if args.opps == 'live':  # the real table: us + the three live opponents, random seats
+        names = sorted(LIVE)
+        names.insert(rng.randrange(len(names) + 1), OUR_NAME)
+        return names, rng.randrange(1 << 30)
     pool = args.opps.split(',')
     k = rng.randint(args.min_players, args.max_players) - 1
     names = []
@@ -392,15 +535,16 @@ def main():
     ap.add_argument('--n', type=int, default=1000)
     ap.add_argument('--seed', type=int, default=1)
     ap.add_argument('--procs', type=int, default=max(1, (os.cpu_count() or 2) - 2))
-    ap.add_argument('--opps', default=','.join(sorted(BUILTINS)))
-    ap.add_argument('--min-players', type=int, default=3)
-    ap.add_argument('--max-players', type=int, default=6)
+    ap.add_argument('--opps', default=','.join(sorted(MIMICS)) or ','.join(sorted(BUILTINS)),
+                    help='default: the log-fitted real opponents if tools/data/opp_profiles.json exists')
+    ap.add_argument('--min-players', type=int, default=4)
+    ap.add_argument('--max-players', type=int, default=4)
     ap.add_argument('--chips', type=int, default=1000)
-    ap.add_argument('--blinds', default='5,10,15,20,25,30,40,50,60,80,100,150,200,300,400,500',
-                    help='small blind schedule (uncalibrated: fit to real logs)')
+    ap.add_argument('--blinds', default='2,3,5,10,15,20,30,40,50,70,100,150,200,300,400,500,600,800,1000',
+                    help='small blind schedule per 10 rounds (from live logs up to 300)')
     ap.add_argument('--blind-hands', type=int, default=10, help='hands per blind level')
-    ap.add_argument('--max-hands', type=int, default=200, help='3-minute cap as a hand limit')
-    ap.add_argument('--hand-sec', type=float, default=0.9, help='simulated seconds per hand (cutoff mode)')
+    ap.add_argument('--max-hands', type=int, default=400, help='safety cap; live games end in 73-133 rounds')
+    ap.add_argument('--hand-sec', type=float, default=0.2, help='simulated seconds per hand (live: ~100 rounds in ~25s)')
     ap.add_argument('--budget-ms', type=float, default=3)
     ap.add_argument('--iters', type=int, default=400)
     args = ap.parse_args()
