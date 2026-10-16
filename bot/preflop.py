@@ -1,11 +1,10 @@
 """Preflop: EV-based push/fold (Z1), raise-or-shove (Z2), standard opens (Z3)."""
-from . import config, tables, equity, tournament, opponents, priors, bpex  # noqa: F401
+from . import config, tables, equity, tournament, opponents, priors  # noqa: F401
 from .actions import FOLD, CHECK, CALL, ALL_IN, RAISE_TO
 from .cards import hand_class
 
 OPEN_BY_BEHIND = {0: 0.50, 1: 0.45, 2: 0.32, 3: 0.25, 4: 0.20, 5: 0.16}
-RESTEAL_MAX_PCT = 0.30
-BX_3BET_MAX_PCT = 0.50   # hands we 3-bet (non-all-in) over bpex's deep medium open  # live logs: trash re-shoves (73s, T3o, J2o) over opens got called by better
+RESTEAL_MAX_PCT = 0.30  # live logs: trash re-shoves (73s, T3o, J2o) over opens got called by better
 # heads-up Nash floors (chip EV, no ante): (effective bb, hand percentile) - SB shove / BB call vs shove
 HU_NASH_SHOVE = ((1, 1.0), (5, 0.71), (10, 0.58), (15, 0.45), (20, 0.38))
 HU_NASH_CALL = ((1, 1.0), (5, 0.62), (10, 0.38), (15, 0.29), (20, 0.24))
@@ -23,8 +22,6 @@ def _interp(tab, x):
 
 def _raiser_cont(p):
     """P(raiser calls our 3-bet shove): measured r3 counts (priors + live log), prior 0.35."""
-    if p.get('name') == bpex.NAME:
-        return 0.95  # its opens call our re-shove when equity vs our top 30% beats pot odds + 0.04: nearly always
     s = opponents.get(p.get('name')).s
     n, c = s.get('r3_n', 0.0), s.get('r3_c', 0.0)
     return max(0.08, min(0.9, (c + 0.35 * 5) / (n + 5)))
@@ -151,15 +148,6 @@ def _facing_raise(v, ctx, cls, info):
     villains = [p for p in v.opps if _bet(p) > bb] or ([agg] if agg else [])
     ranges = [_range_of(ctx, p, bb) for p in villains]
     eq = _eq_vs(v, ctx, cls, ranges)
-    bx = bpex.spot(v)
-    if bx and not [p for p in v.opps if p is not agg and _bet(p) >= v.current_buy_in]:
-        eq = bpex.eq(cls, bx[1])  # its exact range from source
-        info['bx'] = bx[0]
-        if bx[0] == 'medium' and bx[2] > 25 and v.eff_bb > 25 and v.my_bet <= bb and len(v.behind) <= 1 \
-                and pct <= BX_3BET_MAX_PCT:
-            size = 3 * v.current_buy_in
-            if size < 0.35 * (S + v.my_bet):
-                return RAISE_TO(size), 'pf_bx_3bet', info  # deep, it folds all but QQ+/AK to a non-all-in 3-bet
     call_eff = min(call, S)
     pot_eff = sum(min(_bet(p), v.my_bet + S) for p in v.players)
     required = call_eff / float(pot_eff + call_eff) if call_eff else 0.0
