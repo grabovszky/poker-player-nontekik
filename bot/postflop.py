@@ -155,6 +155,9 @@ def decide(v, ctx):
             return ALL_IN, 'post_value_allin', info
         return RAISE_TO(v.my_bet + size), 'post_value', info
     if n == 1 and v.opps_live:
+        b = bluff.exploit(v, ctx, eq, opps[0])
+        if b:
+            return RAISE_TO(v.my_bet + b), 'post_exploit_bluff', info
         b = bluff.decide(v, ctx, eq, opps[0])
         if b:
             return RAISE_TO(v.my_bet + b), 'post_bluff', info

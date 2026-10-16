@@ -5,6 +5,10 @@ from . import config
 
 SIZES = ((0.5, 1), (0.75, 1), (1.0, 2))
 
+# From their public source (2026-10-16): all three read our bet size as hand strength and fold
+# everything but strong made hands to big bets (bpex even more so to overbets). Pot fraction to bet.
+BIG_BET_FOLDERS = {'bpex': 1.25, 'megistekik': 1.0, 'nontechyk': 1.0}
+
 
 def has_draw(hole, board):
     cards = hole + board
@@ -51,3 +55,26 @@ def decide(v, ctx, eq, opp):
     if random.Random(ctx.seed).random() > 0.75:
         return None
     return best
+
+
+EXPLOIT_MAX_EQ = 0.35       # only turn hands with no showdown value into bluffs
+EXPLOIT_SIZE = 0.6          # scales BIG_BET_FOLDERS pot fractions (sim vs their real code: 0.6 > 1.0)
+EXPLOIT_STREETS = (3, 4, 5)
+_fired = {}                 # (game_id, round) -> True once we bluffed this hand: never barrel
+
+
+def exploit(v, ctx, eq, opp):
+    """Heads-up big-bet bluff against a known big-bet folder; off once their measured fold rate says no."""
+    frac = BIG_BET_FOLDERS.get(opp.get('name'))
+    key = (v.game_id, v.round)
+    if frac is None or int(opp.get('stack') or 0) == 0 or eq > EXPLOIT_MAX_EQ or v.street not in EXPLOIT_STREETS \
+            or key in _fired:
+        return None
+    f, n = ctx.model(opp.get('name')).fold_to_bet(2)
+    if n >= config.min_samples and f < 0.45:
+        return None
+    if len(_fired) > 5000:
+        _fired.clear()
+    _fired[key] = True
+    b = int(frac * EXPLOIT_SIZE * max(v.pot, 1))
+    return v.my_stack if b >= 0.6 * v.my_stack else b
