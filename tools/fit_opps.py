@@ -16,6 +16,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, ROOT)
 from bot import tables, evaluator  # noqa: E402
 from bot.cards import parse_many, hand_class  # noqa: E402
+from bot.exploits import k  # noqa: E402
 
 US = 'nontekik'
 KIND = re.compile(r'\(([\w ]+)\)')
@@ -190,7 +191,6 @@ def profile(acc):
                    'size_bb': round(sorted(acc.fi_size[d])[len(acc.fi_size[d]) // 2], 1) if acc.fi_size[d] else 3.0})
     po_sizes = sorted(acc.post_open_size)
     return {
-        'version': acc.version,
         'first_in': fi,
         'vs_raise_cont': [rate(c[1], c[0], 0.3) for c in acc.vs_raise],
         'vs_raise_reraise': [rate(c[2], c[1], 0.2) for c in acc.vs_raise],
@@ -214,7 +214,6 @@ def priors(acc):
     s['r3_n'], s['r3_c'] = round(acc.c['r3_n'] * k3, 2), round(acc.c['r3_c'] * k3, 2)
     sp = sorted(acc.shove_pcts)
     s['shove_pcts'] = [round(sp[int(q * (len(sp) - 1))], 3) for q in (0.1, 0.3, 0.5, 0.7, 0.9)] if len(sp) >= 5 else []
-    s['version'] = acc.version
     return s
 
 
@@ -225,14 +224,16 @@ def main():
     args = ap.parse_args()
     files = sorted(glob.glob(os.path.join(args.logs, '*', '*.json')), key=os.path.getmtime)[-args.last:]
     A = fit(files)
-    profs = dict((n, profile(a)) for n, a in A.items() if n != US and a.c['hands'])
-    pri = dict((n, priors(a)) for n, a in A.items() if n != US and a.c['hands'])
+    names = [n for n, a in A.items() if n != US and a.c['hands']]
+    key = lambda n: str(k({'name': n}))  # noqa: E731  no names in the repo
+    profs = dict((key(n), profile(A[n])) for n in names)
+    pri = dict((key(n), priors(A[n])) for n in names)
     os.makedirs(os.path.join(ROOT, 'tools', 'data'), exist_ok=True)
     json.dump(profs, open(os.path.join(ROOT, 'tools', 'data', 'opp_profiles.json'), 'w'), indent=1)
     json.dump(pri, open(os.path.join(ROOT, 'bot', 'data', 'opp_priors.json'), 'w'), indent=1)
     print('fit %d games' % len(files))
-    for n, p in profs.items():
-        q = pri[n]
+    for n in names:
+        p, q = profs[key(n)], pri[key(n)]
         print('%-12s hands=%-5d vpip=%.2f aggr=%.2f allin=%.2f fold_to_allin=%.2f vs_allin_call=%s' % (
             n, p['n'], q['vpip'] / q['hands'], q['aggr'] / q['hands'], q['allin'] / q['hands'],
             q['fts_f'] / max(1, q['fts_n']), p['vs_allin_call']))

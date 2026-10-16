@@ -12,7 +12,7 @@ def _stack(gs):
 
 
 class Player:
-    VERSION = "1.2.3"
+    VERSION = "1.2.4"
     team_name = "nontekik"
 
     def betRequest(self, game_state):

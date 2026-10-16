@@ -1,15 +1,14 @@
 """Preflop: EV-based push/fold (Z1), raise-or-shove (Z2), standard opens (Z3)."""
-from . import config, tables, equity, tournament, opponents, priors  # noqa: F401  (priors seeds the model)
+from . import config, tables, equity, tournament, opponents, priors  # noqa: F401
 from .actions import FOLD, CHECK, CALL, ALL_IN, RAISE_TO
 from .cards import hand_class
 
 OPEN_BY_BEHIND = {0: 0.50, 1: 0.45, 2: 0.32, 3: 0.25, 4: 0.20, 5: 0.16}
-RESTEAL_MAX_PCT = 0.30  # live logs: trash re-shoves (73s, T3o, J2o) over opens got called by better
+RESTEAL_MAX_PCT = 0.30
 
 
 def _raiser_cont(p):
-    """P(raiser calls our 3-bet shove): measured r3 counts (priors) else 0.35."""
-    s = opponents.STATS.get(p.get('name')) or {}
+    s = opponents.get(p.get('name')).s
     n, c = s.get('r3_n', 0.0), s.get('r3_c', 0.0)
     return max(0.08, min(0.9, (c + 0.35 * 5) / (n + 5)))
 
