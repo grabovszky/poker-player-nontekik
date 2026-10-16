@@ -13,7 +13,7 @@ class Player:
             return game_state['current_buy_in'] - our_bet - game_state['small_blind']
 
         def fold():
-            return 100
+            return 0
 
         def minimum_raise():
             return call() + game_state['minimum_raise'] * 10
@@ -62,12 +62,18 @@ class Player:
                     break
             return hand_rank
 
+        # less fold
         def call_or_fold():
             current_call = call()
+            stack = player.get('stack', 0)
+            if current_call <= 0:
+                return call()
+            if stack > 0 and current_call <= stack * 0.5:
+                return call()
             if current_call <= 50:
                 return call()
-            if current_call <= our_bet * 1.25:
-                return call()
+            # Optionally, never fold preflop unless push/fold situation
+            # Remove next line for more aggression: return call()
             return fold()
 
         def is_straight():
@@ -79,15 +85,15 @@ class Player:
             def to_num(card):
                 r = card['rank']
                 if r == 'A':
-                    return 14 * 10
+                    return 14
                 elif r == 'K':
-                    return 13 * 10
+                    return 13
                 elif r == 'Q':
-                    return 12 * 10
+                    return 12
                 elif r == 'J':
-                    return 11 * 10
+                    return 11
                 elif r == 'T':
-                    return 10 * 10
+                    return 10
                 else:
                     try:
                         return int(r)
