@@ -1,7 +1,7 @@
 """Postflop: equity vs ranges, SPR shove/fold, value bets, pot-odds calls, bluffs."""
 import math
 
-from . import config, equity, bluff, opponents, tables
+from . import config, equity, bluff, opponents, tables, tournament
 from .actions import FOLD, CHECK, CALL, ALL_IN, RAISE_TO
 from .evaluator import evaluate, category
 from .exploits import k
@@ -98,6 +98,17 @@ def wet(board):
     return any(r[i + 2] - r[i] <= 4 for i in range(len(r) - 2))
 
 
+def _ireq(v, vil, our_add, vil_add, winner):
+    """Equity needed in tournament points (5/3 ICM) to risk our_add against vil; None when not applicable."""
+    if vil is None:
+        return None
+    try:
+        f, _, w, l = tournament.icm_allin(v, v.idx_of(vil), our_add, vil_add, v.idx_of(winner or vil))
+    except Exception:
+        return None
+    return (f - l) / (w - l) if w > l else None
+
+
 def decide(v, ctx):
     opps = v.opps
     n = max(1, len(opps))
@@ -136,22 +147,36 @@ def decide(v, ctx):
         required = call_eff / float(pot_eff + call_eff)
         info['required'] = round(required, 3)
         agg_allin = agg is not None and _st(agg) == 0
+        vadj = {-1: 0.03, 0: 0.0, 1: -0.03}[ctx.var]
         if spr <= config.low_spr_shove or call >= 0.5 * S:
-            if eq < required + margin:
+            need = required + margin
+            if ctx.icm:
+                ir = _ireq(v, agg, call_eff, 0, agg)
+                if ir is not None:
+                    info['icm_req'] = round(ir, 3)
+                    need = max(need, ir + vadj)
+            if eq < need:
                 return FOLD, 'post_lowspr_fold', info
             shove_eq = 0.62 if v.street == 5 else 0.52
             if eq >= shove_eq and not agg_allin and call < S and v.opps_live:
-                return ALL_IN, 'post_lowspr_shove', info
+                ir = _ireq(v, agg, S, max(0, min(_st(agg), S - call)), agg) if ctx.icm else None
+                if ir is None or eq >= ir + vadj:
+                    return ALL_IN, 'post_lowspr_shove', info
             return CALL, 'post_lowspr_call', info
         if eq >= (config.raise_eq_hu if n == 1 else config.raise_eq_multi) and v.opps_live:
             size = call + max(v.min_raise, 2 * call)
             if size >= 0.5 * S:
+                ir = _ireq(v, agg, S, max(0, min(_st(agg), S - call)), agg) if ctx.icm else None
+                if ir is not None and eq < ir + vadj:
+                    return (CALL if eq >= required + margin else FOLD), 'post_icm_noshove', info
                 return ALL_IN, 'post_raise_allin', info
             return RAISE_TO(v.my_bet + size), 'post_raise', info
         if eq >= required + margin:
             return CALL, 'post_call', info
         if R2 and n == 1 and v.opps_live and k(agg) == 75655 and call < 0.8 * max(pot - call, 1):
             size = call + pot + call
+            if size >= 0.5 * S and ctx.icm:
+                return FOLD, 'post_fold', info
             if size >= 0.5 * S:
                 return ALL_IN, 'p3', info
             return RAISE_TO(v.my_bet + size), 'p3', info
@@ -179,13 +204,21 @@ def decide(v, ctx):
             frac = 0.7
         size = max(v.bb, int(frac * pot))
         if spr <= config.low_spr_shove or size >= 0.5 * S:
+            big = max(opps, key=_st)
+            ir = _ireq(v, big, S, max(0, min(_st(big), S)), big) if ctx.icm else None
+            if ir is not None and eq < ir:
+                return CHECK, 'post_icm_check', info
             return ALL_IN, 'post_value_allin', info
         return RAISE_TO(v.my_bet + size), 'post_value', info
     if n == 1 and v.opps_live:
         b = bluff.stab(v, opps[0])
+        if b and ctx.icm and b >= S:
+            b = None
         if b:
             return RAISE_TO(v.my_bet + b), 'p2', info
         b = bluff.exploit(v, ctx, eq, opps[0])
+        if b and ctx.icm and b >= S:
+            b = None
         if b:
             return RAISE_TO(v.my_bet + b), 'p1', info
         b = bluff.decide(v, ctx, eq, opps[0])

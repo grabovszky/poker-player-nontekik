@@ -1,11 +1,13 @@
 """Orchestration: parse -> observe -> decide intent -> legal amount -> log."""
+import random
 import time
-import zlib
 
 from . import config, opponents, tournament, preflop, postflop, log, livelog, exploits
 from .actions import CHECK, legal_amount
 from .state import View
 from .cards import to_str
+
+_rng = random.SystemRandom()
 
 
 class Ctx(object):
@@ -15,7 +17,7 @@ class Ctx(object):
         self.table_only = tournament.table_only(v.game_id)
         self.icm = v.n_alive >= 3
         self.var = tournament.variance_mode(v)
-        self.seed = zlib.crc32(('%s|%s|%s|%s' % (v.game_id, v.round, v.street, v.call)).encode())
+        self.seed = _rng.getrandbits(32)
 
 
 def bet_request(gs, t0):
