@@ -16,7 +16,6 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, ROOT)
 from bot import tables, evaluator  # noqa: E402
 from bot.cards import parse_many, hand_class  # noqa: E402
-from bot.exploits import k  # noqa: E402
 
 US = 'nontekik'
 KIND = re.compile(r'\(([\w ]+)\)')
@@ -225,15 +224,14 @@ def main():
     files = sorted(glob.glob(os.path.join(args.logs, '*', '*.json')), key=os.path.getmtime)[-args.last:]
     A = fit(files)
     names = [n for n, a in A.items() if n != US and a.c['hands']]
-    key = lambda n: str(k({'name': n}))  # noqa: E731  no names in the repo
-    profs = dict((key(n), profile(A[n])) for n in names)
-    pri = dict((key(n), priors(A[n])) for n in names)
+    profs = dict((n, profile(A[n])) for n in names)
+    pri = dict((n, priors(A[n])) for n in names)
     os.makedirs(os.path.join(ROOT, 'tools', 'data'), exist_ok=True)
     json.dump(profs, open(os.path.join(ROOT, 'tools', 'data', 'opp_profiles.json'), 'w'), indent=1)
     json.dump(pri, open(os.path.join(ROOT, 'bot', 'data', 'opp_priors.json'), 'w'), indent=1)
     print('fit %d games' % len(files))
     for n in names:
-        p, q = profs[key(n)], pri[key(n)]
+        p, q = profs[n], pri[n]
         print('%-12s hands=%-5d vpip=%.2f aggr=%.2f allin=%.2f fold_to_allin=%.2f vs_allin_call=%s' % (
             n, p['n'], q['vpip'] / q['hands'], q['aggr'] / q['hands'], q['allin'] / q['hands'],
             q['fts_f'] / max(1, q['fts_n']), p['vs_allin_call']))

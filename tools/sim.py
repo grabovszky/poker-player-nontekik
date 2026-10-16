@@ -231,9 +231,9 @@ class Profile(object):
         return call if rng < self.post_bluff * 0.5 else 0
 
 
-LIVE = {'P1': Profile(0.24, 0.12, 15, 0.10, 0.06, 0.20, 0.6, 0.15, 3.0),
-        'P2': Profile(0.20, 0.04, 10, 0.06, 0.05, 0.10, 0.4, 0.05, 3.0),
-        'P3': Profile(0.25, 0.03, 8, 0.28, 0.10, 0.35, 0.8, 0.30, 1.5)}
+LIVE = {'Bpex': Profile(0.24, 0.12, 15, 0.10, 0.06, 0.20, 0.6, 0.15, 3.0),
+        'Megis': Profile(0.20, 0.04, 10, 0.06, 0.05, 0.10, 0.4, 0.05, 3.0),
+        'Techyk': Profile(0.25, 0.03, 8, 0.28, 0.10, 0.35, 0.8, 0.30, 1.5)}
 
 BUILTINS = {'Folder': b_folder, 'AllIn': b_allin, 'CallingStation': b_station, 'ChenPusher': b_chenpusher,
             'TightPassive': b_tightpassive, 'RandomAggro': b_randomaggro, 'ThresholdCaller': b_thresholdcaller}

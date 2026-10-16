@@ -4,12 +4,14 @@ from .actions import FOLD, CHECK, CALL, ALL_IN, RAISE_TO
 from .cards import hand_class
 
 OPEN_BY_BEHIND = {0: 0.50, 1: 0.45, 2: 0.32, 3: 0.25, 4: 0.20, 5: 0.16}
-RESTEAL_MAX_PCT = 0.30
-NS = ((1, 1.0), (5, 0.71), (10, 0.58), (15, 0.45), (20, 0.38))
-NC = ((1, 1.0), (5, 0.62), (10, 0.38), (15, 0.29), (20, 0.24))
+RESTEAL_MAX_PCT = 0.30  # live logs: trash re-shoves (73s, T3o, J2o) over opens got called by better
+# heads-up Nash floors (chip EV, no ante): (effective bb, hand percentile) - SB shove / BB call vs shove
+HU_NASH_SHOVE = ((1, 1.0), (5, 0.71), (10, 0.58), (15, 0.45), (20, 0.38))
+HU_NASH_CALL = ((1, 1.0), (5, 0.62), (10, 0.38), (15, 0.29), (20, 0.24))
 
 
 def _interp(tab, x):
+    """Piecewise-linear lookup in ((x, y), ...), clamped at both ends."""
     if x <= tab[0][0]:
         return tab[0][1]
     for (x0, y0), (x1, y1) in zip(tab, tab[1:]):
@@ -19,6 +21,7 @@ def _interp(tab, x):
 
 
 def _raiser_cont(p):
+    """P(raiser calls our 3-bet shove): measured r3 counts (priors + live log), prior 0.35."""
     s = opponents.get(p.get('name')).s
     n, c = s.get('r3_n', 0.0), s.get('r3_c', 0.0)
     return max(0.08, min(0.9, (c + 0.35 * 5) / (n + 5)))
@@ -108,7 +111,7 @@ def _unopened(v, ctx, cls, info):
         alt = tables.eq_vs_random(cls, len(v.opps)) * v.pot * 0.8 if can_check else 0.0
         if _shove_ok(ev, pts, bb, ctx, alt):
             return ALL_IN, 'pf_shove', info
-        if hu and not can_check and pct <= _interp(NS, v.eff_bb):
+        if hu and not can_check and pct <= _interp(HU_NASH_SHOVE, v.eff_bb):
             return ALL_IN, 'pf_shove_n', info
         return (CHECK if can_check else FOLD), 'pf_pushfold_no', info
 
@@ -157,10 +160,11 @@ def _facing_raise(v, ctx, cls, info):
         ok = eq >= required + margin
         if ctx.icm and agg is not None:
             f, _, w, l = tournament.icm_allin(v, v.idx_of(agg), call_eff, 0, v.idx_of(agg))
-            need = (f - l) / (w - l) if w > l else 1.0
+            need = (f - l) / (w - l) if w > l else 1.0  # bubble factor: equity needed to call, BF/(1+BF)
             ok = eq > need + {-1: 0.01, 0: 0.0, 1: -0.01}[ctx.var]
             info['icm'] = [round(f, 3), round(w, 3), round(l, 3), round(need, 3)]
-        elif not ctx.icm and v.n_alive == 2 and agg_allin and pct <= _interp(NC, v.eff_bb):
+        # heads-up: chip EV, Nash calls as a floor
+        elif not ctx.icm and v.n_alive == 2 and agg_allin and pct <= _interp(HU_NASH_CALL, v.eff_bb):
             ok = ok or eq >= required - 0.05
         if ok:
             if agg_allin or call >= S:
