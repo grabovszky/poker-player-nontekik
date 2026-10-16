@@ -14,7 +14,7 @@ def transform_cards(cards):
     return [(c['rank'], c['suit']) for c in cards]
 
 class Player:
-    VERSION = f"1.3.6 - {config.get('version', 'unknown')}"
+    VERSION = "nontekik_v0.2.0"
     order = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
     team_name = "So Deal With It "
 
