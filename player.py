@@ -13,7 +13,7 @@ class Player:
             return game_state['current_buy_in'] - our_bet - game_state['small_blind']
 
         def fold():
-            return 0
+            return 100
 
         def minimum_raise():
             return call() + game_state['minimum_raise'] * 10
