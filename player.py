@@ -12,7 +12,7 @@ def _stack(gs):
 
 
 class Player:
-    VERSION = "1.2.0 1.1.5 + heads-up big-bet bluffs vs known folders"
+    VERSION = "1.2.1 bpex: bluff >pot, value <=0.8 pot"
     team_name = "nontekik"
 
     def betRequest(self, game_state):

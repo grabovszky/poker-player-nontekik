@@ -7,7 +7,7 @@ SIZES = ((0.5, 1), (0.75, 1), (1.0, 2))
 
 # From their public source (2026-10-16): all three read our bet size as hand strength and fold
 # everything but strong made hands to big bets (bpex even more so to overbets). Pot fraction to bet.
-BIG_BET_FOLDERS = {'bpex': 1.25, 'megistekik': 1.0, 'nontechyk': 1.0}
+BIG_BET_FOLDERS = {'bpex': 2.0, 'megistekik': 1.0, 'nontechyk': 1.0}  # x EXPLOIT_SIZE; bpex: >pot (live: folds 84-100% to >0.8 pot, widens calls vs <=pot)
 
 
 def has_draw(hole, board):

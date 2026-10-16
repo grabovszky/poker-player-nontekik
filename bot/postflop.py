@@ -144,12 +144,17 @@ def decide(v, ctx):
         return FOLD, 'post_fold', info
 
     thr = config.value_bet_eq_hu if n == 1 else config.value_bet_eq_multi
+    vs_bpex = n == 1 and opps[0].get('name') == 'bpex'
+    if vs_bpex:
+        thr = 0.55  # bpex 4.x calls our <=pot bets with a 1.6x wider range: value-bet thinner, <=0.8 pot
     if eq >= thr and v.opps_live:
         frac = 0.66
         if wet(v.board):
             frac = 0.75
         if arch == 'station':
             frac = 0.85
+        if vs_bpex:
+            frac = 0.7
         size = max(v.bb, int(frac * pot))
         if spr <= config.low_spr_shove or size >= 0.5 * S:
             return ALL_IN, 'post_value_allin', info

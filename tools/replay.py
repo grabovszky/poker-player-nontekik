@@ -18,6 +18,11 @@ sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.dirname(__file__))
 import fetch_logs as F  # noqa: E402
 from player import Player  # noqa: E402
+try:  # replays use real game ids: keep the live-log reader from hitting the Lean Poker API
+    from bot import livelog
+    livelog.watch = lambda *a, **k: None
+except ImportError:
+    pass
 
 US = F.US
 
